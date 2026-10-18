@@ -343,6 +343,11 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
 
 ### Fixed
 
+- **A Claude session you named now shows that name.** Naming a session (`/rename`, `--name`) left
+  the sidebar and the tab showing `<system-reminder> The user named this session "…"` instead: Alethe
+  ignored the name and took the note Claude Code writes about it for your first message. The name now
+  wins over Claude's generated title, and notes Claude Code writes itself are no longer mistaken for
+  your first prompt in the sidebar or in Claude's history.
 - **Reconnecting a planner no longer starts a duplicate shell.** Asking the lead agent to open a dev
   server or watcher it already has running on the board (for example after reopening the app, or
   from a new planner terminal) now reuses that running shell and adopts it under the new planner,

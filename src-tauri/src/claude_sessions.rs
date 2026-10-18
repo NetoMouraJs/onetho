@@ -75,6 +75,13 @@ struct RecordHeader {
     entry_type: Option<String>,
     #[serde(rename = "aiTitle", default)]
     ai_title: Option<String>,
+    /// The name the user gave the session (`/rename`, `--name`).
+    #[serde(rename = "customTitle", default)]
+    custom_title: Option<String>,
+    /// Set on user records Claude Code writes itself, such as the
+    /// `<system-reminder>` it adds when the session is named.
+    #[serde(rename = "isMeta", default)]
+    is_meta: Option<bool>,
 }
 
 /// Reads one line, keeping at most `MAX_LINE_BYTES` and discarding the rest
@@ -124,20 +131,27 @@ fn first_text_block(line: &str) -> Option<String> {
     }
 }
 
-fn parse_session_file(
-    id: String,
-    path: PathBuf,
-    metadata: &fs::Metadata,
-) -> Option<ClaudeSessionMeta> {
-    let file = fs::File::open(&path).ok()?;
-    let mut reader = BufReader::with_capacity(64 * 1024, file);
+fn non_empty_trimmed(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
 
-    let mut title: Option<String> = None;
+struct SessionRecords {
+    /// The user's name for the session wins over Claude's generated title.
+    title: Option<String>,
+    first_user_prompt: Option<String>,
+    message_count: usize,
+}
+
+fn scan_session_records(reader: &mut impl BufRead) -> SessionRecords {
+    let mut custom_title: Option<String> = None;
+    let mut ai_title: Option<String> = None;
     let mut first_user_prompt: Option<String> = None;
     let mut message_count: usize = 0;
     let mut buf: Vec<u8> = Vec::with_capacity(8 * 1024);
 
-    while read_capped_line(&mut reader, &mut buf).unwrap_or(false) {
+    while read_capped_line(reader, &mut buf).unwrap_or(false) {
         if buf.is_empty() {
             continue;
         }
@@ -148,19 +162,23 @@ fn parse_session_file(
             continue;
         };
         match header.entry_type.as_deref().unwrap_or("") {
+            "custom-title" => {
+                // Each rename appends a record, so the last one is the current name.
+                if let Some(value) = non_empty_trimmed(header.custom_title) {
+                    custom_title = Some(value);
+                }
+            }
             "ai-title" => {
-                if title.is_none() {
-                    title = header
-                        .ai_title
-                        .map(|value| value.trim().to_string())
-                        .filter(|value| !value.is_empty());
+                if ai_title.is_none() {
+                    ai_title = non_empty_trimmed(header.ai_title);
                 }
             }
             "user" => {
                 message_count += 1;
                 // Only the first user record needs its payload, so this is the
-                // one line per file that still pays for a full value tree.
-                if first_user_prompt.is_none() {
+                // one line per file that still pays for a full value tree. Meta
+                // records are Claude Code's, not something the user typed.
+                if first_user_prompt.is_none() && !header.is_meta.unwrap_or(false) {
                     first_user_prompt =
                         first_text_block(line).map(|s| truncate_chars(s.trim(), 240));
                 }
@@ -172,11 +190,27 @@ fn parse_session_file(
         }
     }
 
-    Some(ClaudeSessionMeta {
-        id,
-        title,
+    SessionRecords {
+        title: custom_title.or(ai_title),
         first_user_prompt,
         message_count,
+    }
+}
+
+fn parse_session_file(
+    id: String,
+    path: PathBuf,
+    metadata: &fs::Metadata,
+) -> Option<ClaudeSessionMeta> {
+    let file = fs::File::open(&path).ok()?;
+    let mut reader = BufReader::with_capacity(64 * 1024, file);
+    let records = scan_session_records(&mut reader);
+
+    Some(ClaudeSessionMeta {
+        id,
+        title: records.title,
+        first_user_prompt: records.first_user_prompt,
+        message_count: records.message_count,
         modified_at_ms: file_modified_ms(metadata),
         size_bytes: metadata.len(),
     })
@@ -681,6 +715,59 @@ mod tests {
         let header = serde_json::from_str::<RecordHeader>(line).unwrap();
         assert_eq!(header.entry_type.as_deref(), Some("user"));
         assert_eq!(first_text_block(line).as_deref(), Some("oi"));
+    }
+
+    fn scan(input: &str) -> SessionRecords {
+        let mut reader = std::io::BufReader::new(Cursor::new(input.as_bytes().to_vec()));
+        scan_session_records(&mut reader)
+    }
+
+    // The shape Claude Code writes when a session is named before the first prompt.
+    const NAMED_SESSION: &str = concat!(
+        r#"{"type":"custom-title","customTitle":"Init","sessionId":"s"}"#,
+        "\n",
+        r#"{"type":"user","isMeta":true,"message":{"role":"user","content":"<system-reminder>\nThe user named this session \"Init\".\n</system-reminder>"}}"#,
+        "\n",
+        r#"{"type":"user","message":{"role":"user","content":"explore the project"}}"#,
+        "\n",
+    );
+
+    #[test]
+    fn the_name_the_user_gave_the_session_is_its_title() {
+        assert_eq!(scan(NAMED_SESSION).title.as_deref(), Some("Init"));
+    }
+
+    #[test]
+    fn a_meta_record_is_not_the_first_prompt() {
+        let records = scan(NAMED_SESSION);
+        assert_eq!(records.first_user_prompt.as_deref(), Some("explore the project"));
+        assert_eq!(records.message_count, 2);
+    }
+
+    #[test]
+    fn the_last_rename_wins_over_the_generated_title() {
+        let input = concat!(
+            r#"{"type":"ai-title","aiTitle":"Generated"}"#,
+            "\n",
+            r#"{"type":"custom-title","customTitle":"First"}"#,
+            "\n",
+            r#"{"type":"custom-title","customTitle":"Second"}"#,
+            "\n",
+        );
+        assert_eq!(scan(input).title.as_deref(), Some("Second"));
+    }
+
+    #[test]
+    fn the_generated_title_still_applies_to_an_unnamed_session() {
+        let input = concat!(
+            r#"{"type":"ai-title","aiTitle":" Generated "}"#,
+            "\n",
+            r#"{"type":"user","message":{"content":"hello"}}"#,
+            "\n",
+        );
+        let records = scan(input);
+        assert_eq!(records.title.as_deref(), Some("Generated"));
+        assert_eq!(records.first_user_prompt.as_deref(), Some("hello"));
     }
 }
 
