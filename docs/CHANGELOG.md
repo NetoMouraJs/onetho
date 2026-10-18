@@ -348,6 +348,11 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
   ignored the name and took the note Claude Code writes about it for your first message. The name now
   wins over Claude's generated title, and notes Claude Code writes itself are no longer mistaken for
   your first prompt in the sidebar or in Claude's history.
+- **The sidebar resize handle shows whenever the resize cursor does.** The handle between a sidebar
+  and the workspace sometimes stayed hidden while the cursor already offered a resize, and vanished
+  mid-drag once the pointer outran it. It now follows the same hover the resizing does, and stays
+  lit for the whole drag; panes also follow the pointer directly while dragging instead of easing
+  behind it.
 - **Reconnecting a planner no longer starts a duplicate shell.** Asking the lead agent to open a dev
   server or watcher it already has running on the board (for example after reopening the app, or
   from a new planner terminal) now reuses that running shell and adopts it under the new planner,

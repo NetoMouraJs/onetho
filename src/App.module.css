@@ -27,8 +27,8 @@
     flex-basis 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.shellBody :global([data-panel-group]:active [data-panel]),
-.shellBody :global([data-panel-group][data-resize-handle-active] [data-panel]) {
+/* react-resizable-panels v4 reports a drag as data-separator='active' on the separator. */
+.shellBody :global([data-group]:has([data-separator='active']) [data-panel]) {
   transition: none !important;
 }
 
@@ -105,15 +105,18 @@
   pointer-events: none;
 }
 
-.shellSeparator:hover,
-.shellSeparator:focus-visible,
-.shellBody :global([data-panel-group][data-resize-handle-active]) .shellSeparator {
+/* Follow the library's hover rather than CSS :hover: it hit-tests by geometry, so it shows the
+   resize cursor even where pane content covers the ::after hit area, and keeps the drag after the
+   pointer leaves it. */
+.shellSeparator[data-separator='hover'],
+.shellSeparator[data-separator='active'],
+.shellSeparator:focus-visible {
   background: var(--border-strong);
 }
 
-.shellSeparator:hover::before,
-.shellSeparator:focus-visible::before,
-.shellBody :global([data-panel-group][data-resize-handle-active]) .shellSeparator::before {
+.shellSeparator[data-separator='hover']::before,
+.shellSeparator[data-separator='active']::before,
+.shellSeparator:focus-visible::before {
   opacity: 1;
   transform: translate(-50%, -50%) scaleY(1);
 }
