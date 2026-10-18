@@ -86,42 +86,57 @@ pub fn agent_canvas_mirror() -> Option<String> {
     CANVAS_MIRROR.lock().ok().and_then(|slot| slot.clone())
 }
 
-#[tauri::command]
-pub fn agent_hooks_settings_path(
-    app: AppHandle,
-    planner_id: String,
-    orchestrator: Option<bool>,
-    ai_memory_enabled: Option<bool>,
-    ai_memory_port: Option<u16>,
-) -> Result<String, String> {
-    let orchestrator = orchestrator.unwrap_or(true);
-    let port = wait_for_listener_port()
-        .ok_or_else(|| "listener de agents ainda nao esta disponivel".to_string())?;
-    let endpoint = listener_endpoint(port);
-    // Namespaced by port and planner so each Claude terminal gets its own file and its hooks carry
-    // the id back, the same way the orchestrator MCP config does per terminal.
-    let safe_planner: String = planner_id
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-        .collect();
-    let variant = if orchestrator { "full" } else { "session" };
-    let path = hook_settings_dir()?.join(format!(
-        "alethe-agent-hooks-{port}-{variant}-{safe_planner}.json"
-    ));
-    let token = init_token();
+fn planner_id_is_header_safe(planner_id: &str) -> bool {
+    !planner_id.is_empty()
+        && planner_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | ':' | '-'))
+}
+
+fn claude_hooks_settings(
+    endpoint: &str,
+    token: &str,
+    planner_id: &str,
+    orchestrator: bool,
+) -> serde_json::Value {
+    let url = format!("{endpoint}/hook");
     let hook = serde_json::json!([
         { "hooks": [ {
             "type": "http",
-            "url": format!("{endpoint}/hook"),
+            "url": url,
             "timeout": 5,
             "headers": { "X-Alethe-Token": token, "X-Alethe-Planner": planner_id }
         } ] }
     ]);
 
-    // Both carry `session_id`, the only authoritative answer to which conversation a pane sits on
-    // once `/clear` or an in-CLI `/resume` moves it off the id it was launched with.
     let mut hooks = serde_json::Map::new();
-    hooks.insert("SessionStart".to_string(), hook.clone());
+    // Claude Code skips http handlers on SessionStart, so curl posts the same stdin payload.
+    if planner_id_is_header_safe(planner_id) {
+        let (curl, sink) = if cfg!(windows) {
+            ("curl.exe", "NUL")
+        } else {
+            ("curl", "/dev/null")
+        };
+        hooks.insert(
+            "SessionStart".to_string(),
+            serde_json::json!([
+                { "hooks": [ {
+                    "type": "command",
+                    "command": curl,
+                    "args": [
+                        "-s", "-m", "4", "--noproxy", "*", "-o", sink,
+                        "-H", "Content-Type:application/json",
+                        "-H", "Expect:",
+                        "-H", format!("X-Alethe-Token:{token}"),
+                        "-H", format!("X-Alethe-Planner:{planner_id}"),
+                        "--data-binary", "@-",
+                        url
+                    ],
+                    "timeout": 5
+                } ] }
+            ]),
+        );
+    }
     hooks.insert("UserPromptSubmit".to_string(), hook.clone());
 
     let mut settings = serde_json::Map::new();
@@ -146,20 +161,45 @@ pub fn agent_hooks_settings_path(
             hooks.insert(event.to_string(), hook.clone());
         }
     }
+    settings.insert("hooks".to_string(), serde_json::Value::Object(hooks));
+    serde_json::Value::Object(settings)
+}
+
+#[tauri::command]
+pub fn agent_hooks_settings_path(
+    app: AppHandle,
+    planner_id: String,
+    orchestrator: Option<bool>,
+    ai_memory_enabled: Option<bool>,
+    ai_memory_port: Option<u16>,
+) -> Result<String, String> {
+    let orchestrator = orchestrator.unwrap_or(true);
+    let port = wait_for_listener_port()
+        .ok_or_else(|| "listener de agents ainda nao esta disponivel".to_string())?;
+    let endpoint = listener_endpoint(port);
+    // Namespaced by port and planner so each Claude terminal gets its own file and its hooks carry
+    // the id back, the same way the orchestrator MCP config does per terminal.
+    let safe_planner: String = planner_id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    let variant = if orchestrator { "full" } else { "session" };
+    let path = hook_settings_dir()?.join(format!(
+        "alethe-agent-hooks-{port}-{variant}-{safe_planner}.json"
+    ));
+    let mut settings = claude_hooks_settings(&endpoint, init_token(), &planner_id, orchestrator);
     // Capture rides in the same file, so one writer owns it and the scope is this terminal.
     // `merge_hooks` refuses an unfamiliar shape rather than writing a broken file.
     let ai_port = ai_memory_port.unwrap_or(crate::ai_memory::DEFAULT_PORT);
     let ai_on = ai_memory_enabled.unwrap_or(false);
     if let Some(theirs) = crate::ai_memory::claude_hooks(&app, ai_on, ai_port) {
-        if let Err(error) = crate::ai_memory_hooks::merge_hooks(&mut hooks, &theirs) {
-            eprintln!("[ai_memory] hooks not merged: {error}");
+        if let Some(hooks) = settings.get_mut("hooks").and_then(|value| value.as_object_mut()) {
+            if let Err(error) = crate::ai_memory_hooks::merge_hooks(hooks, &theirs) {
+                eprintln!("[ai_memory] hooks not merged: {error}");
+            }
         }
     }
-
-    settings.insert("hooks".to_string(), serde_json::Value::Object(hooks));
-
-    let body = serde_json::to_string_pretty(&serde_json::Value::Object(settings))
-        .map_err(|e| e.to_string())?;
+    let body = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     write_private_file(&path, body.as_bytes())?;
     eprintln!(
         "[agent_events] hooks settings escrito em {}",
@@ -309,7 +349,8 @@ fn write_codex_hook_forwarder(port: u16) -> Result<PathBuf, String> {
         endpoint = endpoint,
         token = ps_escape(token),
     );
-    let path = std::env::temp_dir().join(format!("alethe-codex-hook-forward-{}.ps1", install_tag()));
+    let path =
+        std::env::temp_dir().join(format!("alethe-codex-hook-forward-{}.ps1", install_tag()));
     std::fs::write(&path, script).map_err(|e| format!("write_failed:{e}"))?;
     Ok(path)
 }
@@ -401,11 +442,13 @@ pub async fn codex_mcp_config_write(
     planner_agent: String,
 ) -> Result<(), String> {
     let state = app.state::<crate::orchestrator::OrchestratorState>();
-    state.core().register_planner(crate::orchestrator_core::Planner {
-        id: planner_id.clone(),
-        label: planner_label,
-        agent: planner_agent,
-    });
+    state
+        .core()
+        .register_planner(crate::orchestrator_core::Planner {
+            id: planner_id.clone(),
+            label: planner_label,
+            agent: planner_agent,
+        });
     tokio::task::spawn_blocking(move || codex_mcp_config_write_inner(repo, planner_id))
         .await
         .map_err(|error| format!("codex_mcp_config_write: falha na task bloqueante: {error}"))?
@@ -448,7 +491,10 @@ fn codex_hooks_config_write_inner(repo: String, _planner_id: String) -> Result<(
         body.push('\n');
     }
 
-    let command_toml = format!("powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"{script_path}\"", script_path = script_path.to_string_lossy());
+    let command_toml = format!(
+        "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"{script_path}\"",
+        script_path = script_path.to_string_lossy()
+    );
     let mut block = String::new();
     block.push_str(&format!("\n{CODEX_HOOKS_MARK_START}\n"));
     for event in ["SubagentStart", "SubagentStop"] {
@@ -701,7 +747,52 @@ pub fn start_listener(app: AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::toml_string;
+    use super::{claude_hooks_settings, toml_string};
+
+    const ENDPOINT: &str = "http://127.0.0.1:9123";
+
+    #[test]
+    fn session_start_runs_curl_directly_because_claude_skips_http_there() {
+        let settings = claude_hooks_settings(ENDPOINT, "tok_en-1", "pty-1", false);
+        let handler = &settings["hooks"]["SessionStart"][0]["hooks"][0];
+        let args: Vec<&str> = handler["args"]
+            .as_array()
+            .expect("exec form needs an argument list")
+            .iter()
+            .filter_map(|arg| arg.as_str())
+            .collect();
+
+        assert_eq!(handler["type"], "command");
+        assert!(args.contains(&"X-Alethe-Token:tok_en-1"));
+        assert!(args.contains(&"X-Alethe-Planner:pty-1"));
+        assert!(args.contains(&"@-"));
+        assert_eq!(args.last(), Some(&"http://127.0.0.1:9123/hook"));
+    }
+
+    #[test]
+    fn every_other_event_keeps_the_http_handler() {
+        let settings = claude_hooks_settings(ENDPOINT, "token", "pty-1", true);
+        let hooks = settings["hooks"].as_object().expect("hooks object");
+
+        assert_eq!(settings["teammateMode"], "in-process");
+        for (event, handlers) in hooks {
+            if event == "SessionStart" {
+                continue;
+            }
+            assert_eq!(handlers[0]["hooks"][0]["type"], "http", "{event}");
+        }
+        assert!(hooks.contains_key("UserPromptSubmit"));
+        assert!(hooks.contains_key("SubagentStart"));
+    }
+
+    #[test]
+    fn a_planner_id_unsafe_for_a_header_drops_only_session_start() {
+        let settings = claude_hooks_settings(ENDPOINT, "token", "pty 1\r\nX-Evil: 1", false);
+        let hooks = settings["hooks"].as_object().expect("hooks object");
+
+        assert!(!hooks.contains_key("SessionStart"));
+        assert!(hooks.contains_key("UserPromptSubmit"));
+    }
 
     #[test]
     fn toml_string_escapes_windows_paths() {

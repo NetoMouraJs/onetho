@@ -35,7 +35,6 @@ import {
   getCodexSessionTitle,
   getPtyCwd,
   openInVscode,
-  snapshotCodexSessions,
 } from '../../lib/tauri'
 import {
   type AgentType,
@@ -116,6 +115,18 @@ export const TerminalPane = memo(function TerminalPane({
       window.clearTimeout(layoutRetry)
     }
   }, [focusReq, terminal.id])
+
+  // Flash pulse from a voice-driven focus: draw attention without stealing focus.
+  const focusFlash = useUiStore((s) => s.focusFlash)
+  useEffect(() => {
+    if (!focusFlash || focusFlash.terminalId !== terminal.id) return
+    const node = paneRef.current
+    if (!node) return
+    node.animate(
+      [{ boxShadow: '0 0 0 2px var(--accent)' }, { boxShadow: '0 0 0 12px transparent' }],
+      { duration: 700, easing: 'ease-out' },
+    )
+  }, [focusFlash, terminal.id])
 
   const setActiveTab = useProjectsStore((s) => s.setActiveTab)
   const closeSubTab = useProjectsStore((s) => s.closeSubTab)
@@ -262,12 +273,8 @@ export const TerminalPane = memo(function TerminalPane({
     }
     const activeSessions = getActiveSessions()
     const savedSession = activeSessions[activeTab.id] ?? activeSessions[ptyId] ?? null
-    let resumeSessionId =
+    const resumeSessionId =
       activeTab.sessionId ?? savedConversationIdFor(savedSession, activeTab.type, restartCwd)
-
-    if (!resumeSessionId && activeTab.type === 'codex' && restartCwd) {
-      resumeSessionId = (await snapshotCodexSessions(restartCwd).catch(() => []))[0]?.id
-    }
 
     try {
       const launch = await relaunchAgentPty({
@@ -278,6 +285,7 @@ export const TerminalPane = memo(function TerminalPane({
         sessionId: resumeSessionId,
         cwd: restartCwd,
         graphifyRepo,
+        runAsAdmin: activeTab.runAsAdmin,
       })
       if (launch.sessionId && launch.sessionId !== activeTab.sessionId) {
         setSubTabSessionId(projectId, terminal.id, activeTab.id, launch.sessionId)
@@ -714,6 +722,7 @@ export const TerminalPane = memo(function TerminalPane({
                   command={activeTab.type === 'shell' ? null : activeTab.type}
                   cwd={activeTab.cwd || null}
                   extraArgs={runtimeExtraArgs}
+                  runAsAdmin={activeTab.type === 'shell' && activeTab.runAsAdmin}
                   initialInput={activeTab.initialInput}
                   runtimeProfile={activeTab.runtimeProfile}
                   useRouter9={activeTab.useRouter9}
@@ -730,9 +739,7 @@ export const TerminalPane = memo(function TerminalPane({
                     }
                   }}
                   onSessionId={(sessionId) => {
-                    if (activeTab.sessionId !== sessionId) {
-                      setSubTabSessionId(projectId, terminal.id, activeTab.id, sessionId)
-                    }
+                    setSubTabSessionId(projectId, terminal.id, activeTab.id, sessionId)
                   }}
                   onInitialInputSent={() =>
                     setSubTabInitialInput(projectId, terminal.id, activeTab.id, undefined)

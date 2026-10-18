@@ -24,7 +24,7 @@ export type BuiltinAgentType =
 export type AgentType = BuiltinAgentType | (string & {})
 
 /** Providers whose subscription usage Alethe can read. */
-export type UsageProviderId = 'claude' | 'codex' | 'antigravity'
+export type UsageProviderId = 'claude' | 'codex' | 'antigravity' | 'kimi'
 
 export const AGENT_TYPE_LABELS: Record<BuiltinAgentType, string> = {
   claude: 'Claude Code',
@@ -229,6 +229,8 @@ export type SubTab = {
   sessionId?: string
   /** Args extras passados pro launcher (ex: --dangerously-skip-permissions). */
   extraArgs?: string[]
+  /** Start a plain Windows shell with administrator privileges. */
+  runAsAdmin?: boolean
 
   initialInput?: string
   /** One-shot context packet used to bootstrap a cross-provider session. */
@@ -575,6 +577,7 @@ export type TerminalCreationPreset = {
     type: AgentType
     cwd: string
     extraArgs?: string[]
+    runAsAdmin?: boolean
     runtimeProfile?: AgentRuntimeProfile
     useRouter9?: boolean
   }
@@ -622,6 +625,12 @@ export const DEFAULT_ROUTER9_PREFERENCES: Router9Preferences = {
   apiKey: '',
   defaultForNewAgents: false,
 }
+
+export const DICTATION_CLOUD_MODELS = [
+  'openai/gpt-audio-mini',
+  'google/gemini-3.1-flash-lite',
+] as const
+export type DictationCloudModel = (typeof DICTATION_CLOUD_MODELS)[number]
 
 /** A named preset for delegated workers. A delegate call that names it gets exactly these values. */
 export type OrchestrationRole = {
@@ -795,10 +804,12 @@ export type Preferences = {
   usageShowClaude: boolean
   usageShowCodex: boolean
   usageShowAntigravity: boolean
+  usageShowKimi: boolean
   /** Itens opcionais exibidos no canto direito da topbar. */
   topbarShowClaudeUsage: boolean
   topbarShowCodexUsage: boolean
   topbarShowAntigravityUsage: boolean
+  topbarShowKimiUsage: boolean
   topbarShowSync: boolean
   topbarShowProfile: boolean
   topbarShowMemory: boolean
@@ -848,12 +859,16 @@ export type Preferences = {
   dictationMode: 'toggle' | 'hold'
   /** Selected on-device STT model id (Parakeet TDT v3 by default). */
   dictationModelId: string
+  dictationProvider: 'local' | 'openrouter'
+  dictationCloudModel: DictationCloudModel
   /** Preferred microphone deviceId, or null for the OS default. */
   dictationMicrophoneId: string | null
   /** Cached microphone label when the preferred device is unplugged. */
   dictationMicrophoneLabel: string | null
   /** Decisions API key for voice commands. Empty disables the command bar. */
   voiceCommandApiKey: string
+  /** Keep the microphone live between commands until the bar is closed. */
+  voiceKeepListening: boolean
   /** How many PTYs may spawn in parallel (global queue). Default 3. */
   spawnConcurrency: number
 
@@ -990,13 +1005,15 @@ export const DEFAULT_PREFERENCES: Preferences = {
   spotifyClientId: '',
   spotifyClientSecret: '',
   discordRichPresenceEnabled: false,
-  usageAccess: { claude: false, codex: false, antigravity: false },
+  usageAccess: { claude: false, codex: false, antigravity: false, kimi: false },
   usageShowClaude: true,
   usageShowCodex: true,
   usageShowAntigravity: true,
+  usageShowKimi: true,
   topbarShowClaudeUsage: true,
   topbarShowCodexUsage: true,
   topbarShowAntigravityUsage: true,
+  topbarShowKimiUsage: false,
   topbarShowSync: true,
   topbarShowProfile: true,
   topbarShowMemory: true,
@@ -1048,9 +1065,12 @@ export const DEFAULT_PREFERENCES: Preferences = {
   dictationEnabled: false,
   dictationMode: 'toggle',
   dictationModelId: 'parakeet-tdt-0.6b-v3-int8',
+  dictationProvider: 'local',
+  dictationCloudModel: 'openai/gpt-audio-mini',
   dictationMicrophoneId: null,
   dictationMicrophoneLabel: null,
   voiceCommandApiKey: '',
+  voiceKeepListening: false,
   spawnConcurrency: 3,
   resourcePolicy: {
     mode: 'manual',

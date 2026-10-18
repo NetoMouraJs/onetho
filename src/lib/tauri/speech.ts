@@ -67,6 +67,22 @@ export async function speechCaptureLevel(): Promise<number> {
   return invoke('speech_capture_level')
 }
 
+export type VadStatus = {
+  level: number
+  voice: boolean
+  heardMs: number
+  silenceMs: number
+  segments: number
+}
+
+export async function speechVadStatus(): Promise<VadStatus | null> {
+  return invoke('speech_vad_status')
+}
+
+export async function speechPrepareVad(): Promise<boolean> {
+  return invoke('speech_prepare_vad')
+}
+
 export async function speechStopCapture(): Promise<CapturedAudio> {
   return invoke('speech_stop_capture')
 }
@@ -76,8 +92,33 @@ export async function speechPrepare(modelId: string): Promise<boolean> {
   return invoke('speech_prepare', { modelId })
 }
 
+/**
+ * Decode only the audio recorded since the previous partial call and return the
+ * accumulated transcript. Errors when the backend has no partial support.
+ */
+export async function speechTranscribePartial(modelId: string): Promise<string> {
+  return invoke('speech_transcribe_partial', { modelId })
+}
+
 export async function speechStopAndTranscribe(modelId: string): Promise<string> {
   return invoke('speech_stop_and_transcribe', { modelId })
+}
+
+export async function speechStopAndTranscribeCloud(apiKey: string, model: string): Promise<string> {
+  return invoke('speech_stop_and_transcribe_cloud', { apiKey, model })
+}
+
+export type Transcriber = {
+  provider: 'local' | 'openrouter'
+  modelId: string
+  cloudModel: string
+  apiKey: string
+}
+
+export async function stopAndTranscribe(transcriber: Transcriber): Promise<string> {
+  return transcriber.provider === 'openrouter'
+    ? speechStopAndTranscribeCloud(transcriber.apiKey, transcriber.cloudModel)
+    : speechStopAndTranscribe(transcriber.modelId)
 }
 
 export async function speechTranscribe(

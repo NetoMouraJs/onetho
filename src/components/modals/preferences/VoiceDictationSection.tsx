@@ -7,17 +7,23 @@ import {
   onSpeechDownloadProgress,
   speechDeleteModel,
   speechDownloadModel,
+  type SpeechInputDevice,
   speechListInputDevices,
   speechListModels,
-  speechModelStates,
-  type SpeechInputDevice,
   type SpeechModelManifest,
   type SpeechModelState,
+  speechModelStates,
 } from '../../../lib/tauri'
+import { DICTATION_CLOUD_MODELS, type DictationCloudModel } from '../../../lib/types'
 import { useProjectsStore } from '../../../stores/projectsStore'
 import { Dropdown } from '../../ui/Dropdown'
 import styles from '../PreferencesModal.module.css'
 import { SettingsSection } from './primitives'
+
+const CLOUD_MODEL_LABELS = {
+  'openai/gpt-audio-mini': 'prefs.dictationCloudModelGptAudioMini',
+  'google/gemini-3.1-flash-lite': 'prefs.dictationCloudModelGeminiFlashLite',
+} as const satisfies Record<DictationCloudModel, string>
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
@@ -127,6 +133,23 @@ export function VoiceDictationSection() {
   return (
     <>
       <SettingsSection
+        id="voice-command-key"
+        title={t('voice.bar.keyInputLabel')}
+        description={t('voice.bar.keySettingsDesc')}
+      >
+        <input
+          className={styles.voiceKeyInput}
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          aria-label={t('voice.bar.keyInputLabel')}
+          placeholder={t('voice.bar.keyPlaceholder')}
+          value={preferences.voiceCommandApiKey}
+          onChange={(event) => setPreferences({ voiceCommandApiKey: event.target.value })}
+        />
+      </SettingsSection>
+
+      <SettingsSection
         id="dictation"
         title={t('prefs.dictation')}
         description={t('prefs.dictationDesc', { shortcut })}
@@ -206,53 +229,106 @@ export function VoiceDictationSection() {
       </SettingsSection>
 
       <SettingsSection
-        id="dictation-model"
-        title={t('prefs.dictationModel')}
-        description={model?.description ?? t('prefs.dictationModelDesc')}
+        id="dictation-provider"
+        title={t('prefs.dictationProvider')}
+        description={t('prefs.dictationProviderDesc')}
       >
-        {model ? (
-          <div className={styles.integrationFields}>
-            <p>
-              <strong>{model.label}</strong>
-              {model.recommended ? ` · ${t('prefs.dictationModelRecommended')}` : null}
-              {` · ${formatBytes(model.sizeBytes)}`}
-            </p>
-            <p>
-              {modelState?.status === 'ready'
-                ? t('prefs.dictationModelReady')
-                : t('prefs.dictationModelMissing')}
-            </p>
-            {downloadFraction != null ? (
-              <p>
-                {t('prefs.dictationModelProgress', { percent: Math.round(downloadFraction * 100) })}
-              </p>
-            ) : null}
-            <div className={styles.segmented}>
-              <button
-                type="button"
-                disabled={busy || modelState?.status === 'ready'}
-                onClick={() => void downloadModel()}
-              >
-                {t('prefs.dictationModelDownload')}
-              </button>
-              <button
-                type="button"
-                disabled={busy || modelState?.status !== 'ready'}
-                onClick={() => void deleteModel()}
-              >
-                {t('prefs.dictationModelDelete')}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <p>{t('prefs.dictationModelLoading')}</p>
-        )}
-        {error ? (
-          <div className={styles.integrationFields}>
-            <p className={styles.cliWarning}>{error}</p>
-          </div>
-        ) : null}
+        <div className={styles.segmented}>
+          <button
+            type="button"
+            className={preferences.dictationProvider === 'local' ? styles.segmentActive : undefined}
+            disabled={!preferences.dictationEnabled}
+            onClick={() => setPreferences({ dictationProvider: 'local' })}
+          >
+            {t('prefs.dictationProviderLocal')}
+          </button>
+          <button
+            type="button"
+            className={
+              preferences.dictationProvider === 'openrouter' ? styles.segmentActive : undefined
+            }
+            disabled={!preferences.dictationEnabled}
+            onClick={() => setPreferences({ dictationProvider: 'openrouter' })}
+          >
+            {t('prefs.dictationProviderOpenRouter')}
+          </button>
+        </div>
       </SettingsSection>
+
+      {preferences.dictationProvider === 'openrouter' ? (
+        <SettingsSection
+          id="dictation-cloud-model"
+          title={t('prefs.dictationCloudModel')}
+          description={t('prefs.dictationCloudModelDesc')}
+        >
+          <div className={styles.segmented}>
+            {DICTATION_CLOUD_MODELS.map((cloudModel) => (
+              <button
+                key={cloudModel}
+                type="button"
+                className={
+                  preferences.dictationCloudModel === cloudModel ? styles.segmentActive : undefined
+                }
+                disabled={!preferences.dictationEnabled}
+                onClick={() => setPreferences({ dictationCloudModel: cloudModel })}
+              >
+                {t(CLOUD_MODEL_LABELS[cloudModel])}
+              </button>
+            ))}
+          </div>
+        </SettingsSection>
+      ) : (
+        <SettingsSection
+          id="dictation-model"
+          title={t('prefs.dictationModel')}
+          description={model?.description ?? t('prefs.dictationModelDesc')}
+        >
+          {model ? (
+            <div className={styles.integrationFields}>
+              <p>
+                <strong>{model.label}</strong>
+                {model.recommended ? ` · ${t('prefs.dictationModelRecommended')}` : null}
+                {` · ${formatBytes(model.sizeBytes)}`}
+              </p>
+              <p>
+                {modelState?.status === 'ready'
+                  ? t('prefs.dictationModelReady')
+                  : t('prefs.dictationModelMissing')}
+              </p>
+              {downloadFraction != null ? (
+                <p>
+                  {t('prefs.dictationModelProgress', {
+                    percent: Math.round(downloadFraction * 100),
+                  })}
+                </p>
+              ) : null}
+              <div className={styles.segmented}>
+                <button
+                  type="button"
+                  disabled={busy || modelState?.status === 'ready'}
+                  onClick={() => void downloadModel()}
+                >
+                  {t('prefs.dictationModelDownload')}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || modelState?.status !== 'ready'}
+                  onClick={() => void deleteModel()}
+                >
+                  {t('prefs.dictationModelDelete')}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p>{t('prefs.dictationModelLoading')}</p>
+          )}
+          {error ? (
+            <div className={styles.integrationFields}>
+              <p className={styles.cliWarning}>{error}</p>
+            </div>
+          ) : null}
+        </SettingsSection>
+      )}
     </>
   )
 }

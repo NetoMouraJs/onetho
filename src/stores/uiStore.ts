@@ -11,6 +11,7 @@ import {
 import { basename } from '../lib/paths'
 import type {
   AntigravityUsage,
+  KimiUsage,
   ClaudeUsage,
   CodexUsage,
   MemoryStats,
@@ -59,7 +60,8 @@ type ModalKind =
 
 export type ActiveView = 'home' | 'workspace' | 'agentCanvas' | 'agentSandbox'
 /** Open on purpose: plugins contribute right-sidebar tabs at runtime. */
-export type RightSidebarMode = 'markdown' | 'gsdSync' | 'mcp' | 'prs' | 'plugins' | 'agents' | (string & {})
+export type RightSidebarMode =
+  'markdown' | 'gsdSync' | 'mcp' | 'prs' | 'plugins' | 'agents' | (string & {})
 export type MarkdownSidebarTab = { path: string; title: string }
 
 export type MemorySample = MemoryStats & {
@@ -99,6 +101,7 @@ type UiState = {
   claudeUsageError: 'no_token' | 'unavailable' | null
   codexUsage: CodexUsage | null
   antigravityUsage: AntigravityUsage | null
+  kimiUsage: KimiUsage | null
 
   focusedTerminalId: string | null
   /**
@@ -113,6 +116,8 @@ type UiState = {
   mountedPaneIds: string[]
   /** Pulse that requests focus for a specific pane. */
   focusRequest: { terminalId: string; ts: number } | null
+  /** Pulse that flashes a specific pane so a voice-driven focus is visible. */
+  focusFlash: { terminalId: string; ts: number } | null
   activeTerminal: { projectId: string; terminalId: string } | null
   selectedPanes: { projectId: string; terminalId: string }[]
   /** View principal sendo exibida no main. */
@@ -167,8 +172,10 @@ type UiState = {
   setClaudeUsageError: (value: 'no_token' | 'unavailable' | null) => void
   setCodexUsage: (value: CodexUsage | null) => void
   setAntigravityUsage: (value: AntigravityUsage | null) => void
+  setKimiUsage: (value: KimiUsage | null) => void
   setFocusedTerminal: (id: string | null) => void
   requestPaneFocus: (terminalId: string) => void
+  requestPaneFlash: (terminalId: string) => void
   setActiveTerminal: (projectId: string, terminalId: string) => void
   selectPane: (projectId: string, terminalId: string, extend: boolean) => void
   clearPaneSelection: () => void
@@ -220,10 +227,12 @@ export const useUiStore = create<UiState>((set) => ({
   claudeUsageError: null,
   codexUsage: null,
   antigravityUsage: null,
+  kimiUsage: null,
   focusedTerminalId: null,
   keptAlivePaneIds: [],
   mountedPaneIds: [],
   focusRequest: null,
+  focusFlash: null,
   activeTerminal: null,
   selectedPanes: [],
   activeView: 'workspace',
@@ -274,8 +283,10 @@ export const useUiStore = create<UiState>((set) => ({
   setClaudeUsageError: (value) => set({ claudeUsageError: value }),
   setCodexUsage: (value) => set({ codexUsage: value }),
   setAntigravityUsage: (value) => set({ antigravityUsage: value }),
+  setKimiUsage: (value) => set({ kimiUsage: value }),
   setFocusedTerminal: (id) => set({ focusedTerminalId: id }),
   requestPaneFocus: (terminalId) => set({ focusRequest: { terminalId, ts: Date.now() } }),
+  requestPaneFlash: (terminalId) => set({ focusFlash: { terminalId, ts: Date.now() } }),
   setActiveTerminal: (projectId, terminalId) => set({ activeTerminal: { projectId, terminalId } }),
   selectPane: (projectId, terminalId, extend) =>
     set((state) => {

@@ -4,12 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '../../lib/i18n'
 import { formatShortcut } from '../../lib/platform'
 import { DEFAULT_SPEECH_MODEL_ID } from '../../lib/speech/audio'
-import {
-  speechStartCapture,
-  speechStopAndTranscribe,
-  speechStopCapture,
-  writePty,
-} from '../../lib/tauri'
+import { speechStartCapture, speechStopCapture, stopAndTranscribe, writePty } from '../../lib/tauri'
 import { useProjectsStore } from '../../stores/projectsStore'
 import { useUiStore } from '../../stores/uiStore'
 import styles from './DictationButton.module.css'
@@ -44,6 +39,9 @@ export function DictationButton() {
   const mode = useProjectsStore((s) => s.preferences.dictationMode)
   const modelId = useProjectsStore((s) => s.preferences.dictationModelId || DEFAULT_SPEECH_MODEL_ID)
   const micId = useProjectsStore((s) => s.preferences.dictationMicrophoneId)
+  const provider = useProjectsStore((s) => s.preferences.dictationProvider)
+  const cloudModel = useProjectsStore((s) => s.preferences.dictationCloudModel)
+  const apiKey = useProjectsStore((s) => s.preferences.voiceCommandApiKey)
   const [listening, setListening] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -72,7 +70,12 @@ export function DictationButton() {
     setBusy(true)
     setError(null)
     try {
-      const text = await speechStopAndTranscribe(modelId)
+      if (provider === 'openrouter' && !apiKey.trim()) {
+        await speechStopCapture()
+        setError(t('dictation.missingCloudKey'))
+        return
+      }
+      const text = await stopAndTranscribe({ provider, modelId, cloudModel, apiKey })
       if (!text.trim()) {
         setError(t('dictation.emptyTranscript'))
         return
@@ -90,7 +93,7 @@ export function DictationButton() {
       busyRef.current = false
       setBusy(false)
     }
-  }, [insertTranscript, modelId, t])
+  }, [apiKey, cloudModel, insertTranscript, modelId, provider, t])
 
   const startCapture = useCallback(async () => {
     if (recordingRef.current || busyRef.current) return

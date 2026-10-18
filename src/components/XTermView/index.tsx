@@ -16,6 +16,7 @@ import { createPortal } from 'react-dom'
 
 import { cliPathMatchesAgent } from '../../lib/agentCliPath'
 import { normalizeBrowserUrl } from '../../lib/browserUrl'
+import { noteCodexPaneInput } from '../../lib/codexSessionTracking'
 import { pickFile } from '../../lib/dialog'
 import { getLocale, translate, useT } from '../../lib/i18n'
 import { writeScopedStorage } from '../../lib/storageNamespace'
@@ -52,6 +53,7 @@ export type XTermViewProps = {
   command?: AgentType | null
   cwd?: string | null
   extraArgs?: string[]
+  runAsAdmin?: boolean
 
   initialInput?: string
   /** Identidade persistida da conversa deste pane. */
@@ -90,6 +92,7 @@ export function XTermView({
   command,
   cwd,
   extraArgs,
+  runAsAdmin,
   initialInput,
   sessionId,
   sessionKey,
@@ -334,6 +337,7 @@ export function XTermView({
     let startsNewSession = false
     const historyChanged = applyPromptHistoryInput(state, data, (line) => {
       if (line === '/new') startsNewSession = true
+      if (command === 'codex' && ptyIdRef.current) noteCodexPaneInput(ptyIdRef.current, line)
     })
     currentLineRef.current = state.currentLine
     promptHistoryOverflowRef.current = state.overflow
@@ -367,6 +371,7 @@ export function XTermView({
     command,
     cwd,
     extraArgs,
+    runAsAdmin,
     initialInput,
     sessionId,
     env,

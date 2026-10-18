@@ -1,6 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import {
+  resetCodexSessionTrackingForTests,
+  trackCodexRollout,
+} from '../../lib/codexSessionTracking'
 import { plannerLabelFor } from '../../lib/claudeMcpConfigs'
 import { resetSessionClaimsForTests } from '../../lib/sessionDiscovery'
 import { peekSession, saveSession } from '../../lib/sessionResume'
@@ -12,6 +16,12 @@ import { useTerminalsStore } from '../../stores/terminalsStore'
 import { useXtermSession } from './useXtermSession'
 
 const hooks = vi.hoisted(() => new Set<(event: { payload: AgentHookPayload }) => void>())
+const pane = vi.hoisted(() => ({
+  visible: false,
+  written: [] as string[],
+  onData: null as ((chunk: string) => void) | null,
+  onExit: null as ((payload: { code: number | null; reason: string }) => void) | null,
+}))
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(async (_name, handler) => {
     hooks.add(handler)
@@ -42,6 +52,13 @@ vi.mock('@xterm/xterm', () => ({
     onData() {}
     dispose() {}
     writeln() {}
+    write(data: string, done?: () => void) {
+      pane.written.push(data)
+      done?.()
+    }
+    reset() {}
+    refresh() {}
+    scrollToBottom() {}
   },
 }))
 vi.mock('@xterm/addon-fit', () => ({
@@ -51,19 +68,25 @@ vi.mock('@xterm/addon-fit', () => ({
 }))
 vi.mock('@xterm/addon-search', () => ({ SearchAddon: class {} }))
 vi.mock('@xterm/addon-unicode11', () => ({ Unicode11Addon: class {} }))
-vi.mock('../../lib/ptyVisibility', () => ({ usePtyPanelVisible: () => false }))
+vi.mock('../../lib/ptyVisibility', () => ({ usePtyPanelVisible: () => pane.visible }))
 vi.mock('../../lib/tauri', async (importOriginal) => ({
   ...(await importOriginal<typeof tauri>()),
   ptyExists: vi.fn(async () => false),
   setPtyVisible: vi.fn(async () => true),
-  listenPtyData: vi.fn(async () => () => {}),
+  listenPtyData: vi.fn(async (_id: string, handler: (chunk: string) => void) => {
+    pane.onData = handler
+    return () => {}
+  }),
+  resumePtyOutput: vi.fn(async () => null),
+  attachPty: vi.fn(async () => ''),
   listenPtyActivity: vi.fn(async () => () => {}),
-  listenPtyExit: vi.fn(async () => () => {}),
+  listenPtyExit: vi.fn(async (_id: string, handler: (payload: tauri.PtyExitPayload) => void) => {
+    pane.onExit = handler
+    return () => {}
+  }),
   findCliLauncher: vi.fn(async () => 'claude'),
-  snapshotClaudeSessions: vi.fn(async () => [
-    { id: 'bananas', modified_at_ms: 1 },
-    { id: 'new-chat', modified_at_ms: 2 },
-  ]),
+  claudeSessionExists: vi.fn(async () => true),
+  snapshotCodexSessions: vi.fn(async () => []),
   agentHooksSettingsPath: vi.fn(async () => 'hooks.json'),
   spawnPty: vi.fn(async () => ({ id: 'pty-0' })),
 }))
@@ -119,9 +142,14 @@ function params(): Parameters<typeof useXtermSession>[0] {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  pane.visible = false
+  pane.written = []
+  pane.onData = null
+  pane.onExit = null
   hooks.clear()
   localStorage.clear()
   resetSessionClaimsForTests()
+  resetCodexSessionTrackingForTests()
   useProjectsStore.setState({ ...structuredClone(EMPTY_PROJECTS_FILE), hydrated: false })
   useTerminalsStore.setState({ byPtyId: {} })
   vi.stubGlobal(
@@ -222,5 +250,116 @@ describe('Claude terminal session lifecycle', () => {
     expect(original).toHaveBeenLastCalledWith('new-chat')
     expect(input.onSessionIdRef.current).not.toHaveBeenCalled()
     expect(peekSession('tab-0')?.claudeSessionId).toBe('new-chat')
+  })
+
+  it('starts a fresh conversation only when the saved transcript no longer exists', async () => {
+    vi.mocked(tauri.claudeSessionExists).mockResolvedValueOnce(false)
+    const input = params()
+    renderHook(() => useXtermSession(input))
+    await waitFor(() => expect(input.setBootPhase).toHaveBeenCalledWith('ready'))
+    const args = vi.mocked(tauri.spawnPty).mock.calls[0][0].extraArgs ?? []
+    expect(tauri.claudeSessionExists).toHaveBeenCalledWith('D:/repo', 'bananas')
+    expect(args).toContain('--session-id')
+    expect(args).not.toContain('--resume')
+  })
+
+  it('keeps the conversation when the transcript lookup itself fails', async () => {
+    vi.mocked(tauri.claudeSessionExists).mockRejectedValueOnce(new Error('lookup failed'))
+    const input = params()
+    renderHook(() => useXtermSession(input))
+    await waitFor(() => expect(input.setBootPhase).toHaveBeenCalledWith('ready'))
+    expect(tauri.spawnPty).toHaveBeenCalledWith(
+      expect.objectContaining({ extraArgs: expect.arrayContaining(['--resume', 'bananas']) }),
+    )
+  })
+
+  it('keeps the saved conversation when the app shuts the PTY down', async () => {
+    const input = params()
+    renderHook(() => useXtermSession(input))
+    await waitFor(() => expect(pane.onExit).not.toBeNull())
+    act(() => pane.onExit?.({ code: null, reason: 'shutdown' }))
+    expect(peekSession('tab-0')?.claudeSessionId).toBe('bananas')
+    expect(input.onExitRef.current).not.toHaveBeenCalled()
+    expect(input.onSessionIdRef.current).not.toHaveBeenCalledWith(undefined)
+
+    act(() => pane.onExit?.({ code: 0, reason: 'exited' }))
+    expect(peekSession('tab-0')).toBeNull()
+  })
+})
+
+describe('Codex terminal session lifecycle', () => {
+  function codexPane() {
+    const state = useProjectsStore.getState()
+    const project = state.createProject({ name: 'Codex' })
+    const terminal = state.createTerminal(project.id, {
+      name: 'Codex',
+      cwd: 'D:/repo',
+      firstTab: { type: 'codex', cwd: 'D:/repo' },
+    })
+    const tab = terminal.tabs[0]
+    state.setSubTabPtyId(project.id, terminal.id, tab.id, 'pty-0')
+    const input = params()
+    input.command = 'codex'
+    input.sessionId = undefined
+    input.sessionPersistenceKey = tab.id
+    return { input, tabId: tab.id }
+  }
+
+  it('waits for the session watcher instead of polling the rollout directory', async () => {
+    const { input } = codexPane()
+    renderHook(() => useXtermSession(input))
+    await waitFor(() => expect(input.setBootPhase).toHaveBeenCalledWith('ready'))
+    expect(vi.mocked(tauri.spawnPty).mock.calls[0][0].extraArgs ?? []).not.toContain('resume')
+    expect(tauri.snapshotCodexSessions).not.toHaveBeenCalled()
+  })
+
+  it('adopts the conversation the watcher reports, then the one created by /new', async () => {
+    const { input, tabId } = codexPane()
+    renderHook(() => useXtermSession(input))
+    await waitFor(() => expect(input.setBootPhase).toHaveBeenCalledWith('ready'))
+    const rollout = (id: string) => ({
+      id,
+      cwd: 'D:\\repo',
+      source: 'cli',
+      started_at: new Date().toISOString(),
+    })
+
+    act(() => trackCodexRollout(rollout('first-chat')))
+    expect(input.onSessionIdRef.current).toHaveBeenLastCalledWith('first-chat')
+    expect(peekSession(tabId)?.codexSessionId).toBe('first-chat')
+
+    act(() => trackCodexRollout({ ...rollout('exec-run'), source: 'exec' }))
+    expect(peekSession(tabId)?.codexSessionId).toBe('first-chat')
+  })
+})
+
+describe('pane visibility', () => {
+  async function hiddenLivePane() {
+    useTerminalsStore.getState().registerPty('pty-0')
+    const input = params()
+    const view = renderHook(() => useXtermSession(input))
+    await waitFor(() => expect(input.setBootPhase).toHaveBeenCalledWith('ready'))
+    await waitFor(() => expect(pane.onData).not.toBeNull())
+    return view
+  }
+
+  it('writes what was missed while hidden before any output that arrived meanwhile', async () => {
+    const view = await hiddenLivePane()
+    vi.mocked(tauri.resumePtyOutput).mockImplementationOnce(async () => {
+      pane.onData?.('live')
+      return 'missed '
+    })
+    pane.visible = true
+    view.rerender()
+    await waitFor(() => expect(pane.written.join('')).toContain('missed live'))
+    expect(tauri.attachPty).not.toHaveBeenCalled()
+  })
+
+  it('falls back to a full replay when the backlog is incomplete', async () => {
+    const view = await hiddenLivePane()
+    vi.mocked(tauri.resumePtyOutput).mockResolvedValueOnce(null)
+    pane.visible = true
+    view.rerender()
+    await waitFor(() => expect(tauri.attachPty).toHaveBeenCalledWith('pty-0'))
   })
 })

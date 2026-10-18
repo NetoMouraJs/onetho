@@ -60,6 +60,10 @@ path relative to the repository.
    [`docs/CHANGELOG.md`](docs/CHANGELOG.md) in the same task, under the **`[Unreleased]`** section
    (top of the file), with a short, objective, user-facing description. Never skip this step — the
    changelog is the source for release notes.
+6. **Track the macOS port.** The Mac app is a separate Swift codebase. Every `feat`/`fix` that
+   changes behavior gets an entry in [`docs/MAC_PORT.md`](docs/MAC_PORT.md) under **Unreleased**,
+   in the same task, and its commit carries a `Mac-Port: required | skip (<reason>) | n/a` trailer.
+   Changes to synced or persisted data are kind `contract`. `npm run mac-port -- --check` must pass.
 
 ## 4. Architecture at a glance
 

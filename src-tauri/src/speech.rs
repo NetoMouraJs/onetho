@@ -16,9 +16,10 @@ use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::paths::app_data_dir;
-use crate::speech_capture::{self, CapturedAudio, CaptureSession, SpeechInputDevice};
+use crate::speech_capture::{self, CaptureSession, CapturedAudio, SpeechInputDevice};
+use crate::speech_vad::{VadMonitor, VadStatus};
 
-const SAMPLE_RATE: i32 = 16_000;
+pub(crate) const SAMPLE_RATE: i32 = 16_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -177,6 +178,14 @@ const ZIPFORMER_GIGASPEECH: CatalogEntry = CatalogEntry {
 
 const CATALOG: &[CatalogEntry] = &[ZIPFORMER_GIGASPEECH, ZIPFORMER_SMALL_EN, PARAKEET_V3];
 
+const VAD_DIR: &str = "silero-vad";
+const VAD_FILE: ModelFile = ModelFile {
+    name: "silero_vad.onnx",
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
+    size_bytes: 643_854,
+    sha256: "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+};
+
 pub struct SpeechState {
     /// Serializes downloads so two prefs clicks don't race the same folder.
     download_lock: AsyncMutex<()>,
@@ -184,6 +193,7 @@ pub struct SpeechState {
     capture: Mutex<Option<CaptureSession>>,
     /// Loading the encoder costs hundreds of megabytes of disk read per utterance.
     recognizer: Mutex<Option<(PathBuf, Arc<OfflineRecognizer>)>>,
+    vad: Mutex<Option<VadMonitor>>,
 }
 
 impl Default for SpeechState {
@@ -192,6 +202,7 @@ impl Default for SpeechState {
             download_lock: AsyncMutex::new(()),
             capture: Mutex::new(None),
             recognizer: Mutex::new(None),
+            vad: Mutex::new(None),
         }
     }
 }
@@ -300,22 +311,17 @@ pub fn speech_model_states(app: AppHandle) -> Result<Vec<SpeechModelState>, Stri
         .collect())
 }
 
-#[tauri::command]
-pub async fn speech_download_model(
-    app: AppHandle,
-    state: State<'_, SpeechState>,
-    model_id: String,
-) -> Result<SpeechModelState, String> {
-    let entry = find_entry(&model_id)?;
-    let _guard = state.download_lock.lock().await;
-    let dir = model_dir(&app, &model_id)?;
-    fs::create_dir_all(&dir).map_err(|e| format!("create model dir: {e}"))?;
-
+async fn download_files(
+    app: &AppHandle,
+    files: &[ModelFile],
+    dir: &Path,
+    progress_id: &str,
+) -> Result<(), String> {
     let client = reqwest::Client::new();
-    let total = entry_size_bytes(entry);
+    let total: u64 = files.iter().map(|f| f.size_bytes).sum();
     let mut downloaded_total = 0u64;
 
-    for file in entry.files {
+    for file in files {
         let dest = dir.join(file.name);
         if dest.is_file() {
             match sha256_file(&dest) {
@@ -360,14 +366,15 @@ pub async fn speech_download_model(
             let _ = app.emit(
                 "speech://download-progress",
                 DownloadProgressEvent {
-                    model_id: model_id.clone(),
+                    model_id: progress_id.to_string(),
                     downloaded: overall,
                     total,
                     fraction,
                 },
             );
         }
-        out.flush().map_err(|e| format!("flush {}: {e}", file.name))?;
+        out.flush()
+            .map_err(|e| format!("flush {}: {e}", file.name))?;
         drop(out);
 
         let hash = sha256_file(&tmp)?;
@@ -381,6 +388,21 @@ pub async fn speech_download_model(
         fs::rename(&tmp, &dest).map_err(|e| format!("finalize {}: {e}", file.name))?;
         downloaded_total += file.size_bytes;
     }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn speech_download_model(
+    app: AppHandle,
+    state: State<'_, SpeechState>,
+    model_id: String,
+) -> Result<SpeechModelState, String> {
+    let entry = find_entry(&model_id)?;
+    let _guard = state.download_lock.lock().await;
+    let dir = model_dir(&app, &model_id)?;
+    fs::create_dir_all(&dir).map_err(|e| format!("create model dir: {e}"))?;
+
+    download_files(&app, entry.files, &dir, &model_id).await?;
 
     Ok(SpeechModelState {
         id: model_id,
@@ -402,6 +424,7 @@ pub fn speech_delete_model(app: AppHandle, model_id: String) -> Result<(), Strin
 
 #[tauri::command]
 pub fn speech_start_capture(
+    app: AppHandle,
     state: State<'_, SpeechState>,
     device_id: Option<String>,
 ) -> Result<(), String> {
@@ -413,7 +436,38 @@ pub fn speech_start_capture(
         return Err("Dictation is already recording".into());
     }
     *slot = Some(speech_capture::start_capture(device_id)?);
+    let monitor = vad_model_path(&app)
+        .ok()
+        .filter(|path| path.is_file())
+        .and_then(|path| VadMonitor::new(&path).ok());
+    if let Ok(mut vad) = state.vad.lock() {
+        *vad = monitor;
+    }
     Ok(())
+}
+
+fn vad_model_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(models_root(app)?.join(VAD_DIR).join(VAD_FILE.name))
+}
+
+#[tauri::command]
+pub async fn speech_prepare_vad(app: AppHandle) -> Result<bool, String> {
+    let path = vad_model_path(&app)?;
+    if path.is_file() {
+        return Ok(true);
+    }
+    let dir = models_root(&app)?.join(VAD_DIR);
+    fs::create_dir_all(&dir).map_err(|e| format!("create vad dir: {e}"))?;
+    download_files(&app, std::slice::from_ref(&VAD_FILE), &dir, VAD_DIR).await?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn speech_vad_status(state: State<'_, SpeechState>) -> Option<VadStatus> {
+    let capture = state.capture.lock().ok()?;
+    let capture = capture.as_ref()?;
+    let mut vad = state.vad.lock().ok()?;
+    Some(vad.as_mut()?.poll(capture))
 }
 
 #[tauri::command]
@@ -431,7 +485,7 @@ pub fn speech_stop_capture(state: State<'_, SpeechState>) -> Result<CapturedAudi
     stop_capture(&state)
 }
 
-fn stop_capture(state: &SpeechState) -> Result<CapturedAudio, String> {
+pub(crate) fn stop_capture(state: &SpeechState) -> Result<CapturedAudio, String> {
     let mut slot = state
         .capture
         .lock()
@@ -439,6 +493,9 @@ fn stop_capture(state: &SpeechState) -> Result<CapturedAudio, String> {
     let capture = slot
         .take()
         .ok_or_else(|| "Dictation is not recording".to_string())?;
+    if let Ok(mut vad) = state.vad.lock() {
+        *vad = None;
+    }
     capture.stop()
 }
 
@@ -449,7 +506,7 @@ fn decode_threads() -> i32 {
     cores.saturating_sub(1).clamp(2, 8) as i32
 }
 
-const HOTWORDS: &[&str] = &[
+pub(crate) const HOTWORDS: &[&str] = &[
     "CODEX",
     "CLAUDE",
     "CLAUDE CODE",
@@ -458,13 +515,28 @@ const HOTWORDS: &[&str] = &[
     "OPENCODE",
     "TERMINAL",
     "TERMINALS",
+    "OPEN TWO TERMINALS",
+    "OPEN THREE TERMINALS",
+    "OPEN UP TWO TERMINALS",
+    "OPEN UP THREE TERMINALS",
     "AGENT",
     "AGENTS",
+    "TERMINAL ONE",
+    "TERMINAL TWO",
+    "TERMINAL THREE",
+    "AGENT ONE",
+    "AGENT TWO",
+    "AGENT THREE",
+    "FIRST TERMINAL",
+    "SECOND TERMINAL",
+    "THIRD TERMINAL",
     "SHELL",
     "IN THE SHELL",
     "SPIN UP",
     "GIT STATUS",
     "RUN THE BUILD",
+    "SEND IT",
+    "THANKS JEV",
     "PACKAGE JSON",
     "FRONTEND",
     "BACKEND",
@@ -481,8 +553,10 @@ fn is_text_vocab(path: &Path) -> bool {
 
 fn write_hotwords(dir: &Path) -> Result<PathBuf, String> {
     let path = dir.join("hotwords.txt");
-    let body = HOTWORDS.join("
-");
+    let body = HOTWORDS.join(
+        "
+",
+    );
     fs::write(&path, body).map_err(|e| format!("write hotwords: {e}"))?;
     Ok(path)
 }
@@ -529,7 +603,7 @@ fn build_recognizer(dir: &Path, model_type: &str) -> Result<OfflineRecognizer, S
 const TRIM_THRESHOLD: f32 = 0.012;
 const TRIM_PAD_SAMPLES: usize = (SAMPLE_RATE as usize) / 10;
 
-fn trim_silence(samples: &[f32]) -> &[f32] {
+pub(crate) fn trim_silence(samples: &[f32]) -> &[f32] {
     let loud = |sample: &f32| sample.abs() > TRIM_THRESHOLD;
     let Some(first) = samples.iter().position(loud) else {
         return samples;
@@ -574,13 +648,7 @@ pub async fn speech_prepare(
     Ok(true)
 }
 
-#[tauri::command]
-pub async fn speech_stop_and_transcribe(
-    app: AppHandle,
-    state: State<'_, SpeechState>,
-    model_id: String,
-) -> Result<String, String> {
-    let audio = stop_capture(&state)?;
+pub(crate) fn validate_capture(audio: &CapturedAudio) -> Result<(), String> {
     if audio.samples.len() < (SAMPLE_RATE as usize) / 6 {
         return Err("Recording was too short — hold a bit longer, then release.".into());
     }
@@ -590,6 +658,17 @@ pub async fn speech_stop_and_transcribe(
                 .into(),
         );
     }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn speech_stop_and_transcribe(
+    app: AppHandle,
+    state: State<'_, SpeechState>,
+    model_id: String,
+) -> Result<String, String> {
+    let audio = stop_capture(&state)?;
+    validate_capture(&audio)?;
     let entry = find_entry(&model_id)?;
     let dir = model_dir(&app, &model_id)?;
     if !model_ready(&dir, entry) {
@@ -604,6 +683,49 @@ pub async fn speech_stop_and_transcribe(
     tokio::task::spawn_blocking(move || transcribe_samples(&recognizer, &samples, sample_rate))
         .await
         .map_err(|e| format!("speech worker join: {e}"))?
+}
+
+/// Decodes a sliding tail window so a spoken send phrase is never split across chunks.
+#[tauri::command]
+pub async fn speech_transcribe_partial(
+    app: AppHandle,
+    state: State<'_, SpeechState>,
+    model_id: String,
+) -> Result<String, String> {
+    let entry = find_entry(&model_id)?;
+    let dir = model_dir(&app, &model_id)?;
+    if !model_ready(&dir, entry) {
+        return Err(format!(
+            "Speech model '{model_id}' is not downloaded. Open Preferences → Integrations → Voice and download it."
+        ));
+    }
+    let samples = {
+        let slot = state
+            .capture
+            .lock()
+            .map_err(|_| "speech capture lock poisoned".to_string())?;
+        let session = slot
+            .as_ref()
+            .ok_or_else(|| "Dictation is not recording".to_string())?;
+        session.snapshot()
+    };
+    let window = partial_window(&samples).to_vec();
+    if window.len() < (SAMPLE_RATE as usize) / 4 {
+        return Ok(String::new());
+    }
+    let recognizer = state.recognizer_for(&dir, entry.model_type)?;
+    tokio::task::spawn_blocking(move || {
+        transcribe_samples(&recognizer, &window, SAMPLE_RATE as u32)
+    })
+    .await
+    .map_err(|e| format!("speech worker join: {e}"))?
+}
+
+const PARTIAL_WINDOW_SECONDS: usize = 3;
+
+fn partial_window(samples: &[f32]) -> &[f32] {
+    let window = SAMPLE_RATE as usize * PARTIAL_WINDOW_SECONDS;
+    &samples[samples.len().saturating_sub(window)..]
 }
 
 #[tauri::command]

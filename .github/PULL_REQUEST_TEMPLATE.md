@@ -23,6 +23,11 @@ Closes #
 
 <!-- Only check what you actually ran. "Windows only" is a fine answer. -->
 
+## macOS port
+
+- [ ] Required: entry added to `docs/MAC_PORT.md` and the `mac-port` label applied
+- [ ] Not needed. Reason:
+
 ## Checklist
 
 - [ ] `npm run build` passes (typecheck + build)

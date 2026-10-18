@@ -17,6 +17,16 @@ One version, four files, kept in sync by `scripts/release.mjs`:
 Never bump them by hand — the script rewrites all four and refuses to run on a dirty tree, so the
 release commit contains the bump and nothing else.
 
+## Before stamping: the macOS port ledger
+
+The macOS app is a separate Swift codebase, so each release also closes its list of changes to
+port. Before `npm run release`:
+
+1. `npm run mac-port -- --check` passes, so every portable commit since the last Mac sync has an
+   entry in `docs/MAC_PORT.md`.
+2. Entries under **Unreleased** in `docs/MAC_PORT.md` move to a new `## <version>` section, with
+   every sha filled in.
+
 ## Step 1 — stamp the version
 
 ```bash
