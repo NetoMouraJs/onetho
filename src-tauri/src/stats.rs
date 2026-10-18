@@ -60,7 +60,11 @@ pub fn collect_memory_stats() -> MemoryStats {
         };
         let mem = process.memory();
         let name = process.name().to_string_lossy().to_ascii_lowercase();
-        if *pid == root_pid || name.contains("alethe") || name.contains("ensemble") {
+        if *pid == root_pid
+            || name.contains("alethe")
+            || name.contains(crate::brand::COMMAND)
+            || name.contains("ensemble")
+        {
             app_bytes += mem;
         } else if name.contains("msedgewebview2") {
             webview_bytes += mem;

@@ -32,10 +32,12 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     # PR so notifica se foi MERGEADO (nao apenas fechado) e na branch padrao (corta ruido de branch de teste).
+    # Fork (Onetho): the webhooks belong to upstream's Discord, so this only runs in the original repo.
     if: >-
-      github.event_name != 'pull_request_target' ||
+      github.repository_owner == 'Kc1t' &&
+      (github.event_name != 'pull_request_target' ||
       (github.event.pull_request.merged == true &&
-       github.event.pull_request.base.ref == github.event.repository.default_branch)
+       github.event.pull_request.base.ref == github.event.repository.default_branch))
     env:
       WH_RELEASES: ${{ secrets.DISCORD_WEBHOOK_ALETHE_RELEASES }}
       WH_UPDATES: ${{ secrets.DISCORD_WEBHOOK_ALETHE_UPDATES }}

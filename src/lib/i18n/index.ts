@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 
 import { useProjectsStore } from '../../stores/projectsStore'
+import { applyBrand } from '../brand'
 import { en, type MessageKey } from './messages/en'
 import { ptBR } from './messages/pt-BR'
 import { zhCN } from './messages/zh-CN'
@@ -102,8 +103,10 @@ function interpolate(message: string, params?: Params): string {
   )
 }
 
+// The brand is applied to the template, before interpolation, so a param can still carry the
+// upstream name verbatim (the "based on Alethe" attribution).
 export function translate(locale: Locale, key: MessageKey, params?: Params): string {
-  return interpolate(lookup(locale, key) ?? key, params)
+  return interpolate(applyBrand(lookup(locale, key) ?? key), params)
 }
 
 /**
@@ -111,7 +114,7 @@ export function translate(locale: Locale, key: MessageKey, params?: Params): str
  * the existing `theme.<id>.label` style of computed key.
  */
 export function translateDynamic(locale: Locale, key: string, params?: Params): string {
-  return interpolate(lookup(locale, key) ?? key, params)
+  return interpolate(applyBrand(lookup(locale, key) ?? key), params)
 }
 
 export function getLocale(): Locale {

@@ -7,6 +7,7 @@ mod ai_memory_hooks;
 mod antigravity_sessions;
 mod antigravity_usage;
 mod backup;
+mod brand;
 mod browser_pane;
 mod browser_session;
 mod cdp;
@@ -239,7 +240,7 @@ pub fn run() {
         .setup(move |app| {
             #[cfg(debug_assertions)]
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_title("(DEV) Alethe");
+                let _ = window.set_title(&format!("(DEV) {}", brand::NAME));
             }
 
             #[cfg(target_os = "linux")]

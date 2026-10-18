@@ -158,7 +158,8 @@ const escapeHtml = (value) =>
   )
 function t(key, replacements = {}) {
   const dictionary = messages[appearance.language] || messages.en
-  const template = dictionary[key] || messages.en[key] || key
+  // Fork (Onetho): mesma troca de marca que `applyBrand` em src/lib/brand.ts.
+  const template = (dictionary[key] || messages.en[key] || key).replace(/Alethe/g, 'Onetho')
   return Object.entries(replacements).reduce(
     (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
     template,

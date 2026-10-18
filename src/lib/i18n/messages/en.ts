@@ -2784,6 +2784,7 @@ export const en = {
   'prefs.categoryAboutDesc': 'App version and software updates.',
   'prefs.aboutVersionTitle': 'Version',
   'prefs.aboutVersionDesc': 'The Alethe build currently installed.',
+  'prefs.aboutBasedOn': 'Based on {upstream} by {author}.',
   'prefs.aboutUpdatesTitle': 'Updates',
   'prefs.aboutUpdatesDesc': 'Check for and install new versions of Alethe.',
   'prefs.aboutCheckUpdates': 'Check for updates',

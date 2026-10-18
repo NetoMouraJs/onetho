@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Alethe",
+  "productName": "Onetho",
   "version": "1.7.0",
-  "identifier": "com.kc1t.alethe",
+  "identifier": "com.netomoura.onetho",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:1422",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Alethe",
+        "title": "Onetho",
         "width": 1280,
         "height": 800,
         "minWidth": 800,
@@ -64,9 +64,9 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "targets": "all",
-    "publisher": "Kauã Miguel",
+    "publisher": "Neto Moura",
     "shortDescription": "Terminal multiplexer GUI",
-    "longDescription": "Alethe is a Windows-first terminal multiplexer GUI: projects on the left, split-pane terminals on the right, with sub-tabs per pane.",
+    "longDescription": "Onetho (a fork of Alethe) is a Windows-first terminal multiplexer GUI: projects on the left, split-pane terminals on the right, with sub-tabs per pane.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -88,7 +88,9 @@
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdERjQwQTVDMDJFMDY3QzQKUldURVorQUNYQXIwZlpTZjNhc1dNamhiSERnalducjJCdDdiR0NFYy8ydnJqcU52VG05cFNqcHUK",
-      "endpoints": ["https://github.com/Kc1t/alethe-agents/releases/latest/download/latest.json"],
+      "endpoints": [
+        "https://github.com/NetoMouraJs/alethe-agents/releases/latest/download/latest.json"
+      ],
       "windows": {
         "installMode": "passive"
       }

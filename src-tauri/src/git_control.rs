@@ -479,16 +479,16 @@ fn git_init_inner(path: String) -> Result<String, String> {
     checked_output(&dir, &["add", "-A"])?;
     let identity = [
         "-c",
-        "user.name=Alethe",
+        "user.name=Onetho",
         "-c",
-        "user.email=alethe@localhost",
+        "user.email=onetho@localhost",
     ];
     let mut commit_args: Vec<&str> = identity.to_vec();
-    commit_args.extend(["commit", "-m", "Commit inicial (Alethe)"]);
+    commit_args.extend(["commit", "-m", "Commit inicial (Onetho)"]);
 
     if checked_output(&dir, &commit_args).is_err() {
         let mut empty_args: Vec<&str> = identity.to_vec();
-        empty_args.extend(["commit", "--allow-empty", "-m", "Commit inicial (Alethe)"]);
+        empty_args.extend(["commit", "--allow-empty", "-m", "Commit inicial (Onetho)"]);
         checked_output(&dir, &empty_args)?;
     }
     repository_root(&path).map(|root| frontend_path(&root))

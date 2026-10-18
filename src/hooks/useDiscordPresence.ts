@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 
+import { BRAND_NAME } from '../lib/brand'
 import { clearDiscordPresence, setDiscordPresence } from '../lib/tauri'
 import { useProjectsStore } from '../stores/projectsStore'
 import { useUiStore } from '../stores/uiStore'
@@ -28,9 +29,11 @@ export function useDiscordPresence() {
     }
 
     const update = () => {
-      void setDiscordPresence('Working with Alethe', VIEW_LABELS[activeView], STARTED_AT).catch(
-        () => undefined,
-      )
+      void setDiscordPresence(
+        `Working with ${BRAND_NAME}`,
+        VIEW_LABELS[activeView],
+        STARTED_AT,
+      ).catch(() => undefined)
     }
 
     update()

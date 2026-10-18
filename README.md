@@ -2,11 +2,11 @@
 
 <br />
 <div align="center">
-  <a href="https://github.com/Kc1t/alethe-agents">
-    <img src="./src/assets/theme-icons/elite-indigo.png" alt="Alethe Logo" width="160">
+  <a href="https://github.com/NetoMouraJs/alethe-agents">
+    <img src="./src/assets/theme-icons/elite-indigo.png" alt="Onetho Logo" width="160">
   </a>
 
-  <h1 align="center">Alethe</h1>
+  <h1 align="center">Onetho</h1>
 
   <p align="center">
     <b>The multi-agent coding workspace.</b>
@@ -17,20 +17,25 @@
   </p>
 
   <p align="center">
-    <a href="https://github.com/Kc1t/alethe-agents/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Kc1t/alethe-agents/ci.yml?branch=main&label=ci&style=flat-square"></a>
-    <a href="https://github.com/Kc1t/alethe-agents/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Kc1t/alethe-agents?style=flat-square"></a>
-    <a href="https://github.com/Kc1t/alethe-agents/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/Kc1t/alethe-agents?style=flat-square"></a>
-    <a href="https://github.com/Kc1t/alethe-agents/graphs/contributors"><img alt="Contributors" src="https://img.shields.io/github/contributors/Kc1t/alethe-agents?style=flat-square"></a>
-    <a href="https://github.com/Kc1t/alethe-agents/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Kc1t/alethe-agents?style=flat-square"></a>
-    <a href="https://github.com/Kc1t/alethe-agents/issues"><img alt="Open issues" src="https://img.shields.io/github/issues/Kc1t/alethe-agents?style=flat-square"></a>
+    <sub>Onetho is a fork of <a href="https://github.com/Kc1t/alethe-agents">Alethe</a> by Kauã Miguel, under AGPL-3.0-or-later.
+    It is not an official Alethe release. Sections below still describe the upstream project.</sub>
   </p>
 
   <p align="center">
-    <a href="https://github.com/Kc1t/alethe-agents/releases">Download</a>
+    <a href="https://github.com/NetoMouraJs/alethe-agents/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/NetoMouraJs/alethe-agents/ci.yml?branch=main&label=ci&style=flat-square"></a>
+    <a href="https://github.com/NetoMouraJs/alethe-agents/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/NetoMouraJs/alethe-agents?style=flat-square"></a>
+    <a href="https://github.com/NetoMouraJs/alethe-agents/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/NetoMouraJs/alethe-agents?style=flat-square"></a>
+    <a href="https://github.com/NetoMouraJs/alethe-agents/graphs/contributors"><img alt="Contributors" src="https://img.shields.io/github/contributors/NetoMouraJs/alethe-agents?style=flat-square"></a>
+    <a href="https://github.com/NetoMouraJs/alethe-agents/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/NetoMouraJs/alethe-agents?style=flat-square"></a>
+    <a href="https://github.com/NetoMouraJs/alethe-agents/issues"><img alt="Open issues" src="https://img.shields.io/github/issues/NetoMouraJs/alethe-agents?style=flat-square"></a>
+  </p>
+
+  <p align="center">
+    <a href="https://github.com/NetoMouraJs/alethe-agents/releases">Download</a>
     ·
-    <a href="https://github.com/Kc1t/alethe-agents/issues/new?labels=bug">Report Bug</a>
+    <a href="https://github.com/NetoMouraJs/alethe-agents/issues/new?labels=bug">Report Bug</a>
     ·
-    <a href="https://github.com/Kc1t/alethe-agents/issues/new?labels=enhancement">Request Feature</a>
+    <a href="https://github.com/NetoMouraJs/alethe-agents/issues/new?labels=enhancement">Request Feature</a>
     ·
     <a href="./SECURITY.md">Security</a>
     ·

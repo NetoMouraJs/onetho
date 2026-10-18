@@ -2482,6 +2482,7 @@ export const zhCN: Record<MessageKey, string> = {
   'prefs.categoryAboutDesc': '应用版本和软件更新。',
   'prefs.aboutVersionTitle': '版本',
   'prefs.aboutVersionDesc': '当前安装的Alethe版本。',
+  'prefs.aboutBasedOn': '基于 {author} 的 {upstream}。',
   'prefs.aboutUpdatesTitle': '更新',
   'prefs.aboutUpdatesDesc': '检查并安装 Alethe 的新版本。',
   'prefs.aboutCheckUpdates': '检查更新',

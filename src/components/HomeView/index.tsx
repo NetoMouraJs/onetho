@@ -17,6 +17,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 
 import { getCachedActivity } from '../../lib/activityCache'
+import { BRAND_REPOSITORY_URL } from '../../lib/brand'
 import { pickDirectory } from '../../lib/dialog'
 import { formatHomeDate, formatRelativeTimestamp, getGreeting } from '../../lib/greeting'
 import { useT, type TFunction } from '../../lib/i18n'
@@ -42,7 +43,7 @@ import styles from './HomeView.module.css'
 
 const RECENT_PROJECTS_LIMIT = 6
 const NOTIFICATIONS_LIMIT = 5
-const REPOSITORY_URL = 'https://github.com/Kc1t/alethe-agents'
+const REPOSITORY_URL = BRAND_REPOSITORY_URL
 const ISSUES_URL = `${REPOSITORY_URL}/issues`
 const RELEASES_URL = `${REPOSITORY_URL}/releases`
 const QUICK_AGENTS: Array<{ type: AgentType; label: string }> = [

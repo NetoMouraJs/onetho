@@ -1,6 +1,6 @@
 use std::fmt;
 
-const SERVICE: &str = "com.kc1t.alethe";
+const SERVICE: &str = crate::brand::IDENTIFIER;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SecretKind {

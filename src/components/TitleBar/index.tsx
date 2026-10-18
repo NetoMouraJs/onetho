@@ -27,6 +27,7 @@ import { useEffect, useRef, useState } from 'react'
 import { requestAppClose } from '../../hooks/useCloseConfirmation'
 import { useRouter9Runtime } from '../../hooks/useRouter9Runtime'
 import { getCachedAntigravityUsage } from '../../lib/antigravityUsageCache'
+import { BRAND_NAME } from '../../lib/brand'
 import { loadClaudeUsage } from '../../lib/claudeUsageCache'
 import { getCachedCodexUsage } from '../../lib/codexUsageCache'
 import { useT } from '../../lib/i18n'
@@ -43,7 +44,7 @@ import styles from './TitleBar.module.css'
 
 const CLAUDE_POLL_INTERVAL_MS = 5 * 60_000
 const REMOTE_CONTROL_POLL_INTERVAL_MS = 2_000
-const APP_TITLE = import.meta.env.DEV ? '(DEV) Alethe' : 'Alethe'
+const APP_TITLE = import.meta.env.DEV ? `(DEV) ${BRAND_NAME}` : BRAND_NAME
 
 function usagePillColor(utilization: number): string {
   if (utilization >= 80) return 'var(--status-offline)'

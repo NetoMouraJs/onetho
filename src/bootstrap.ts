@@ -1,7 +1,8 @@
 import { applyBootAppearance } from './lib/bootAppearance'
+import { BRAND_NAME } from './lib/brand'
 
 if (import.meta.env.DEV) {
-  document.title = '(DEV) Alethe'
+  document.title = `(DEV) ${BRAND_NAME}`
 }
 
 // Mark the platform as soon as the bundled entry starts evaluating, before

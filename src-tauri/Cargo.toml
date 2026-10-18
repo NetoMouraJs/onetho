@@ -1,8 +1,8 @@
 [package]
 name = "alethe"
 version = "1.7.0"
-description = "Alethe — terminal multiplexer GUI"
-authors = ["Kauã Miguel"]
+description = "Onetho — terminal multiplexer GUI (fork of Alethe)"
+authors = ["Kauã Miguel", "Neto Moura"]
 license = "AGPL-3.0-or-later"
 edition = "2021"
 # Two binaries in this crate (alethe + alethe-orchestrator-mcp). Without

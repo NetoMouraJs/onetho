@@ -1,7 +1,7 @@
 {
-  "name": "Alethe Remote",
-  "short_name": "Alethe",
-  "description": "Alethe LAN remote workspace",
+  "name": "Onetho Remote",
+  "short_name": "Onetho",
+  "description": "Onetho LAN remote workspace",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

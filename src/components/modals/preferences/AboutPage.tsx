@@ -2,6 +2,7 @@ import { getVersion } from '@tauri-apps/api/app'
 import { DownloadCloud, RotateCcw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { BRAND_IDENTIFIER, BRAND_NAME, UPSTREAM_AUTHOR, UPSTREAM_NAME } from '../../../lib/brand'
 import { useT } from '../../../lib/i18n'
 import { checkForUpdate, installPendingUpdate } from '../../../lib/updater'
 import { useUiStore } from '../../../stores/uiStore'
@@ -66,8 +67,11 @@ export function AboutPage() {
       >
         <div className={styles.versionCard}>
           <div className={styles.versionCardCopy}>
-            <strong>Alethe</strong>
-            <span>com.kc1t.alethe</span>
+            <strong>{BRAND_NAME}</strong>
+            <span>{BRAND_IDENTIFIER}</span>
+            <span>
+              {t('prefs.aboutBasedOn', { upstream: UPSTREAM_NAME, author: UPSTREAM_AUTHOR })}
+            </span>
           </div>
           <span className={styles.versionCardNumber}>{version ? `v${version}` : '—'}</span>
         </div>

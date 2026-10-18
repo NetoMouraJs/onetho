@@ -1,3 +1,4 @@
+import { BRAND_NAME } from '../brand'
 import { concatFloat32, resampleLinear, SPEECH_TARGET_SAMPLE_RATE } from './audio'
 
 export type MicDevice = {
@@ -61,7 +62,7 @@ export async function startAudioCapture(deviceId: string | null): Promise<AudioC
     } catch {
       const message = firstError instanceof Error ? firstError.message : String(firstError)
       throw new Error(
-        `Microphone permission denied or unavailable (${message}). Allow the mic for Alethe and try again.`,
+        `Microphone permission denied or unavailable (${message}). Allow the mic for ${BRAND_NAME} and try again.`,
       )
     }
   }

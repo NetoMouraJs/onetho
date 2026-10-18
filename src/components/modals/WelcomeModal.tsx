@@ -2,13 +2,14 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
+import { BRAND_NAME } from '../../lib/brand'
 import { useT } from '../../lib/i18n'
 import { getProfileImageUrl, getProfileInitial } from '../../lib/profile'
 import { useProjectsStore } from '../../stores/projectsStore'
 import { useUiStore } from '../../stores/uiStore'
 import styles from './WelcomeModal.module.css'
 
-const PRODUCT_NAME = 'Alethe'
+const PRODUCT_NAME = BRAND_NAME
 
 function daysSince(ts: number | null): number {
   if (!ts) return 1

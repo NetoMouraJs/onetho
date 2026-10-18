@@ -1,6 +1,7 @@
 import { Cloud, Download, Github, Heart, Loader2, LogOut, Upload } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { BRAND_NAME } from '../../lib/brand'
 import { applyCloudPayload, buildCloudPayload } from '../../lib/cloudSync'
 import { intlLocale, type MessageKey, useT } from '../../lib/i18n'
 import {
@@ -26,8 +27,7 @@ import { Modal } from './Modal'
 import styles from './SyncModal.module.css'
 
 const SPONSOR_URL = 'https://github.com/sponsors/Kc1t'
-const CREATE_TOKEN_URL =
-  'https://github.com/settings/tokens/new?scopes=gist&description=Alethe%20Sync'
+const CREATE_TOKEN_URL = `https://github.com/settings/tokens/new?scopes=gist&description=${encodeURIComponent(`${BRAND_NAME} Sync`)}`
 
 type Busy = null | 'connect' | 'push' | 'pull' | 'logout'
 type CloudBusy = null | 'signin' | 'push' | 'pull' | 'logout'

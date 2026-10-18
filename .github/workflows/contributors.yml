@@ -17,6 +17,9 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
+    # Fork (Onetho): the README contributors block comes from upstream with each merge;
+    # regenerating it here would only create conflicts.
+    if: github.repository_owner == 'Kc1t'
     steps:
       - uses: actions/checkout@v5
 

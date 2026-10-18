@@ -2814,6 +2814,7 @@ export const ptBR: Record<MessageKey, string> = {
   'prefs.categoryAboutDesc': 'Versão do app e atualizações de software.',
   'prefs.aboutVersionTitle': 'Versão',
   'prefs.aboutVersionDesc': 'A build do Alethe instalada no momento.',
+  'prefs.aboutBasedOn': 'Baseado no {upstream}, de {author}.',
   'prefs.aboutUpdatesTitle': 'Atualizações',
   'prefs.aboutUpdatesDesc': 'Verifique e instale novas versões do Alethe.',
   'prefs.aboutCheckUpdates': 'Verificar atualizações',
