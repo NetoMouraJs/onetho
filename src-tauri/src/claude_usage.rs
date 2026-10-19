@@ -125,7 +125,16 @@ pub async fn get_claude_usage() -> Result<ClaudeUsage, String> {
         .map_err(|e| format!("request failed: {e}"))?;
 
     if !resp.status().is_success() {
-        return Err(format!("API returned {}", resp.status()));
+        // The frontend holds every caller back for this long after a 429.
+        let retry_after = resp
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.trim().parse::<u64>().ok());
+        return Err(match retry_after {
+            Some(secs) => format!("API returned {}; retry-after={secs}", resp.status()),
+            None => format!("API returned {}", resp.status()),
+        });
     }
 
     let body: serde_json::Value = resp.json().await.map_err(|e| format!("json parse: {e}"))?;

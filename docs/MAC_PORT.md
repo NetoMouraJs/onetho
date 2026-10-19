@@ -36,6 +36,8 @@ Mac synced through: `v1.7.0` (`80e44a3`)
 
 ## Unreleased
 
+- `pending` · `ui` · fix(usage): hold Claude usage requests back after a 429
+  - Files: `src/lib/claudeUsageCache.ts`, `src/hooks/useOrchestratorQuotaWarnings.ts`, `src-tauri/src/claude_usage.rs`
 - `pending` · `ui` · feat(diagnostics): add local Dev diagnostics for usage refreshes and frontend errors
   - Files: `src/lib/devDiagnostics.ts`, `src/components/modals/DevDiagnosticsModal.tsx`, `src/lib/tauri/usage.ts`
 - `pending` · `contract` · MCP servers and skills saved per account and per project, carried by sync

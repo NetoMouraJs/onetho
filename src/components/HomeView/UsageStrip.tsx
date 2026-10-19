@@ -47,6 +47,14 @@ function formatResetMs(resetsAtMs: number): string {
   return formatDiff(resetsAtMs - Date.now())
 }
 
+function formatClock(atMs: number): string {
+  return new Date(atMs).toLocaleTimeString(getLocale(), {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
+
 function meterColor(util: number, base: string): string {
   if (util >= 80) return 'var(--status-offline)'
   if (util >= 50) return 'var(--status-waiting)'
@@ -291,7 +299,10 @@ function StatCell({ label, value, crit }: { label: string; value: string; crit?:
 function ClaudeCard({ usage }: { usage: ClaudeUsage | null }) {
   const t = useT()
   const usageError = useUiStore((s) => s.claudeUsageError)
+  const retryAt = useUiStore((s) => s.claudeUsageRetryAt)
   const accent = 'var(--agent-claude)'
+  const rateLimited = usageError === 'rate_limited' && retryAt !== null
+  const retryHint = rateLimited ? t('widget.usageRetryAt', { time: formatClock(retryAt) }) : null
 
   const head = (
     <CardHead
@@ -313,10 +324,15 @@ function ClaudeCard({ usage }: { usage: ClaudeUsage | null }) {
         {head}
         <div className={styles.usageEmpty}>
           <span className={styles.usageEmptyTitle}>
-            {unavailable ? t('widget.usageUnavailable') : t('widget.noTokenConfigured')}
+            {rateLimited
+              ? t('widget.usageRateLimited')
+              : unavailable
+                ? t('widget.usageUnavailable')
+                : t('widget.noTokenConfigured')}
           </span>
           <span className={styles.usageEmptyHint}>
-            {unavailable ? t('widget.usageUnavailableHint') : t('widget.connectToSeeUsage')}
+            {retryHint ??
+              (unavailable ? t('widget.usageUnavailableHint') : t('widget.connectToSeeUsage'))}
           </span>
         </div>
       </div>
@@ -405,7 +421,14 @@ function ClaudeCard({ usage }: { usage: ClaudeUsage | null }) {
           'opus',
           ...modelLimits.map((l) => l.model.toLowerCase()),
         ].join(' · ')}
-        right={t('widget.peak', { v: `${pctNum(maxUtil)}%` })}
+        right={
+          // A reading kept from before a failed refresh says so instead of passing for live.
+          usageError
+            ? retryHint
+              ? `${t('widget.usageStale')} · ${retryHint}`
+              : t('widget.usageStale')
+            : t('widget.peak', { v: `${pctNum(maxUtil)}%` })
+        }
       />
     </div>
   )

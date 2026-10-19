@@ -99,7 +99,9 @@ type UiState = {
   memoryHistory: MemorySample[]
   claudeUsage: ClaudeUsage | null
   /** Why the last Claude usage read failed; null after a successful one. */
-  claudeUsageError: 'no_token' | 'unavailable' | null
+  claudeUsageError: 'no_token' | 'unavailable' | 'rate_limited' | null
+  /** When a rate-limited Claude usage read may be tried again. */
+  claudeUsageRetryAt: number | null
   codexUsage: CodexUsage | null
   antigravityUsage: AntigravityUsage | null
   kimiUsage: KimiUsage | null
@@ -170,7 +172,10 @@ type UiState = {
   setRuntimeSnapshot: (value: RuntimeSnapshot | null) => void
   clearMemoryHistory: () => void
   setClaudeUsage: (value: ClaudeUsage | null) => void
-  setClaudeUsageError: (value: 'no_token' | 'unavailable' | null) => void
+  setClaudeUsageError: (
+    value: 'no_token' | 'unavailable' | 'rate_limited' | null,
+    retryAt?: number | null,
+  ) => void
   setCodexUsage: (value: CodexUsage | null) => void
   setAntigravityUsage: (value: AntigravityUsage | null) => void
   setKimiUsage: (value: KimiUsage | null) => void
@@ -226,6 +231,7 @@ export const useUiStore = create<UiState>((set) => ({
   memoryHistory: [],
   claudeUsage: null,
   claudeUsageError: null,
+  claudeUsageRetryAt: null,
   codexUsage: null,
   antigravityUsage: null,
   kimiUsage: null,
@@ -281,7 +287,8 @@ export const useUiStore = create<UiState>((set) => ({
   setRuntimeSnapshot: (value) => set({ runtimeSnapshot: value }),
   clearMemoryHistory: () => set({ memoryHistory: [] }),
   setClaudeUsage: (value) => set({ claudeUsage: value }),
-  setClaudeUsageError: (value) => set({ claudeUsageError: value }),
+  setClaudeUsageError: (value, retryAt = null) =>
+    set({ claudeUsageError: value, claudeUsageRetryAt: retryAt }),
   setCodexUsage: (value) => set({ codexUsage: value }),
   setAntigravityUsage: (value) => set({ antigravityUsage: value }),
   setKimiUsage: (value) => set({ kimiUsage: value }),

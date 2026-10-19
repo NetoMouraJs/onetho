@@ -13,6 +13,14 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
 - A local Dev diagnostics dashboard records Claude and Codex usage refresh attempts and frontend failures with safe metadata, correlation IDs, filters and JSON export.
 - Error rows in Dev diagnostics now expand to show their event details and a sanitized frontend stack when available.
 
+### Fixed
+
+- Claude usage no longer stays unavailable after the usage service rate limits it. The orchestrator
+  reads usage through the shared cache instead of once a minute per pane, and after a refusal every
+  read waits for the time the service asks for (or a growing backoff) before trying again. The card
+  says it is rate limited and when it will try next, and a reading kept from before is marked as
+  the last reading.
+
 ## [0.1.0] - 2026-10-19
 
 Upstream base: Alethe 1.7.0 plus upstream `main` up to `e684e72` (`v1.7.0-259-ge684e72`).
