@@ -1,19 +1,20 @@
 import { Clock, RefreshCw } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
-import { loadClaudeUsage } from '../../lib/claudeUsageCache'
-import { getCachedCodexUsage } from '../../lib/codexUsageCache'
+import { type ReactNode,useState } from 'react'
+
 import { getCachedAntigravityUsage } from '../../lib/antigravityUsageCache'
+import { loadClaudeUsage } from '../../lib/claudeUsageCache'
+import { traceCachedCodexUsage } from '../../lib/codexUsageCache'
+import { getLocale, translate, useT } from '../../lib/i18n'
 import { getCachedKimiUsage } from '../../lib/kimiUsageCache'
-import { translate, getLocale, useT } from '../../lib/i18n'
-import { AGENT_TYPE_LABELS } from '../../lib/types'
-import { USAGE_PROVIDERS, type UsageProviderDef } from '../../lib/usageProviders'
 import {
-  codexHeadlineWindow,
-  hasCodexWindow,
   type AntigravityUsage,
   type ClaudeUsage,
+  codexHeadlineWindow,
   type CodexUsage,
+  hasCodexWindow,
 } from '../../lib/tauri'
+import { AGENT_TYPE_LABELS } from '../../lib/types'
+import { USAGE_PROVIDERS, type UsageProviderDef } from '../../lib/usageProviders'
 import { useProjectsStore } from '../../stores/projectsStore'
 import { useUiStore } from '../../stores/uiStore'
 import { AntigravityIcon, ClaudeIcon, CodexIcon, KimiIcon } from '../icons/AgentIcons'
@@ -57,13 +58,13 @@ function pctNum(v: number): number {
 }
 
 async function refreshClaude(): Promise<void> {
-  await loadClaudeUsage(true)
+  await loadClaudeUsage(true, 'claude.manualRefresh')
 }
 
 async function refreshCodex(): Promise<void> {
   const { setCodexUsage } = useUiStore.getState()
   try {
-    setCodexUsage(await getCachedCodexUsage(true))
+    setCodexUsage(await traceCachedCodexUsage(true, 'codex.manualRefresh'))
   } catch {
     setCodexUsage(null)
   }

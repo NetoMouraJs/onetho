@@ -36,6 +36,8 @@ Mac synced through: `v1.7.0` (`80e44a3`)
 
 ## Unreleased
 
+- `pending` · `ui` · feat(diagnostics): add local Dev diagnostics for usage refreshes and frontend errors
+  - Files: `src/lib/devDiagnostics.ts`, `src/components/modals/DevDiagnosticsModal.tsx`, `src/lib/tauri/usage.ts`
 - `pending` · `contract` · MCP servers and skills saved per account and per project, carried by sync
   - Files: `src/lib/toolingManifest.ts`, `src/lib/toolingNotice.ts`, `src/components/ToolingManifestPanel/`
   - Contract: new tooling manifest in the synced payload; secret env and header values are never stored

@@ -49,6 +49,7 @@ type ModalKind =
   | 'whatsNew'
   | 'remoteControl'
   | 'audit'
+  | 'devDiagnostics'
   | 'fsBrowser'
   | 'recentChats'
   | 'handoff'

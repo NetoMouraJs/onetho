@@ -1,18 +1,19 @@
-import { useEffect, useState } from 'react'
 import { Check, Settings2 } from 'lucide-react'
-import { UsageStrip } from '../HomeView/UsageStrip'
+import { useEffect, useState } from 'react'
+
 import { getCachedAntigravityUsage } from '../../lib/antigravityUsageCache'
 import { loadClaudeUsage } from '../../lib/claudeUsageCache'
-import { getCachedCodexUsage } from '../../lib/codexUsageCache'
-import { getCachedKimiUsage } from '../../lib/kimiUsageCache'
+import { traceCachedCodexUsage } from '../../lib/codexUsageCache'
 import { useT } from '../../lib/i18n'
+import { getCachedKimiUsage } from '../../lib/kimiUsageCache'
 import { AGENT_TYPE_LABELS, DEFAULT_PREFERENCES } from '../../lib/types'
 import { USAGE_PROVIDERS } from '../../lib/usageProviders'
 import { useProjectsStore } from '../../stores/projectsStore'
 import { useUiStore } from '../../stores/uiStore'
+import { UsageStrip } from '../HomeView/UsageStrip'
 import { AgentIcon } from '../icons/AgentIcons'
-import { Modal } from './Modal'
 import styles from './AiUsageModal.module.css'
+import { Modal } from './Modal'
 
 function VisibilitySwitch({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
   return (
@@ -93,9 +94,9 @@ export function AiUsageModal() {
     if (!open) return
     let cancelled = false
     // Claude writes its own result: a refused refresh keeps the last reading instead of blanking it.
-    if (claudeAccess) void loadClaudeUsage(true)
+    if (claudeAccess) void loadClaudeUsage(true, 'claude.modalOpen')
     if (codexAccess) {
-      void getCachedCodexUsage(true).then(
+      void traceCachedCodexUsage(true, 'codex.modalOpen').then(
         (usage) => !cancelled && setCodexUsage(usage),
         () => !cancelled && setCodexUsage(null),
       )

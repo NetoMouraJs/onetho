@@ -78,6 +78,10 @@
 
 :root,
 [data-theme='dark'] {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
   --anim-instant: 80ms;
   --anim-fast: 140ms;
   --anim-normal: 220ms;

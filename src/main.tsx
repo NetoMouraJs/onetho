@@ -8,6 +8,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 
 import App from './App'
+import { recordFrontendDiagnostic } from './lib/devDiagnostics'
 import { orchestrationWindowPane } from './lib/orchestrationWindow'
 import { initPluginHost } from './lib/plugins'
 import { recordFrontendError } from './lib/tauri'
@@ -24,6 +25,10 @@ function captureGlobalError(message: string, stack: string | null, kind: string)
   if (key === lastErrorKey && now - lastErrorAt < 2000) return
   lastErrorKey = key
   lastErrorAt = now
+  recordFrontendDiagnostic(
+    kind === 'window.error' ? 'frontend.windowError' : 'frontend.unhandledRejection',
+    stack,
+  )
   void recordFrontendError(message, stack, kind)
 }
 

@@ -18,6 +18,7 @@ import { AddBrowserModal } from './components/modals/AddBrowserModal'
 import { AddContentModal } from './components/modals/AddContentModal'
 import { AiUsageModal } from './components/modals/AiUsageModal'
 import { AuditModal } from './components/modals/AuditModal'
+import { DevDiagnosticsModal } from './components/modals/DevDiagnosticsModal'
 import { EditGroupModal } from './components/modals/EditGroupModal'
 import { EditProjectModal } from './components/modals/EditProjectModal'
 import { FindJumpModal } from './components/modals/FindJumpModal'
@@ -718,6 +719,7 @@ export default function App() {
         <McpIntroModal />
         <RemoteControlModal />
         <AuditModal />
+        <DevDiagnosticsModal />
         <FsBrowserModal />
       </ErrorBoundary>
       <InAppNotifications />

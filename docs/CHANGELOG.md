@@ -10,6 +10,9 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
 
 ## [Unreleased]
 
+- **Dev diagnostics.** A local dashboard traces Claude and Codex usage refreshes and frontend failures with correlation IDs, timing and safe error categories.
+- **Dev diagnostic details.** Failed events can show a sanitized frontend stack and their full event ID.
+
 ### Added
 - **Administrator shell tabs.** New terminal and new tab dialogs offer a Windows administrator
   option when Shell is selected. Elevated shells stay in the Alethe tab and request UAC approval

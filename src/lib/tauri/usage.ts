@@ -1,6 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
 
-import { withUsageAccess } from '../usageAccess'
+import {
+  classifyUsageFailure,
+  type DevDiagnosticSource,
+  finishDevTrace,
+  startDevTrace,
+} from '../devDiagnostics'
+import { isUsageAccessOff, withUsageAccess } from '../usageAccess'
 import type { ModelCost } from './sessions'
 
 export type KimiUsage = {
@@ -31,8 +37,23 @@ export type ClaudeUsage = {
   model_limits?: ClaudeModelLimit[]
 }
 
-export async function getClaudeUsage(): Promise<ClaudeUsage> {
-  return withUsageAccess('claude', () => invoke<ClaudeUsage>('get_claude_usage'))
+export async function getClaudeUsage(
+  source: Extract<DevDiagnosticSource, `claude.${string}`> = 'claude.sharedFetch',
+): Promise<ClaudeUsage> {
+  const trace = startDevTrace(source)
+  try {
+    const usage = await withUsageAccess('claude', () => invoke<ClaudeUsage>('get_claude_usage'))
+    finishDevTrace(trace, 'succeeded')
+    return usage
+  } catch (error) {
+    finishDevTrace(
+      trace,
+      isUsageAccessOff(error) ? 'skipped' : 'failed',
+      isUsageAccessOff(error) ? undefined : classifyUsageFailure(error),
+      error,
+    )
+    throw error
+  }
 }
 
 export type CodexUsageWindow = {
@@ -70,7 +91,16 @@ export function codexHeadlineWindow(usage: CodexUsage): CodexUsageWindow {
 }
 
 export async function getCodexUsage(): Promise<CodexUsage> {
-  return withUsageAccess('codex', () => invoke<CodexUsage>('get_codex_usage'))
+  const trace = startDevTrace('codex.sharedFetch')
+  try {
+    const usage = await withUsageAccess('codex', () => invoke<CodexUsage>('get_codex_usage'))
+    finishDevTrace(trace, 'succeeded')
+    return usage
+  } catch (error) {
+    finishDevTrace(trace, isUsageAccessOff(error) ? 'skipped' : 'failed',
+      isUsageAccessOff(error) ? undefined : classifyUsageFailure(error), error)
+    throw error
+  }
 }
 
 export async function consumeCodexResetCredit(creditId?: string): Promise<CodexUsage> {

@@ -1,4 +1,5 @@
 import {
+  Activity,
   Download,
   FileArchive,
   FileText,
@@ -145,6 +146,16 @@ export function MainMenu() {
       </button>
       {import.meta.env.DEV ? (
         <>
+          <button
+            type="button"
+            className={styles.item}
+            onClick={() => {
+              openModal('devDiagnostics')
+              closeMainMenu()
+            }}
+          >
+            <Activity size={14} /> <span>{t('menu.devDiagnostics')}</span>
+          </button>
           <button
             type="button"
             className={styles.item}
