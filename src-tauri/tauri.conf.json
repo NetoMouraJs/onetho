@@ -89,7 +89,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdERjQwQTVDMDJFMDY3QzQKUldURVorQUNYQXIwZlpTZjNhc1dNamhiSERnalducjJCdDdiR0NFYy8ydnJqcU52VG05cFNqcHUK",
       "endpoints": [
-        "https://github.com/NetoMouraJs/alethe-agents/releases/latest/download/latest.json"
+        "https://github.com/NetoMouraJs/onetho/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

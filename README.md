@@ -2,7 +2,7 @@
 
 <br />
 <div align="center">
-  <a href="https://github.com/NetoMouraJs/alethe-agents">
+  <a href="https://github.com/NetoMouraJs/onetho">
     <img src="./src/assets/theme-icons/elite-indigo.png" alt="Onetho Logo" width="160">
   </a>
 
@@ -22,20 +22,20 @@
   </p>
 
   <p align="center">
-    <a href="https://github.com/NetoMouraJs/alethe-agents/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/NetoMouraJs/alethe-agents/ci.yml?branch=main&label=ci&style=flat-square"></a>
-    <a href="https://github.com/NetoMouraJs/alethe-agents/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/NetoMouraJs/alethe-agents?style=flat-square"></a>
-    <a href="https://github.com/NetoMouraJs/alethe-agents/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/NetoMouraJs/alethe-agents?style=flat-square"></a>
-    <a href="https://github.com/NetoMouraJs/alethe-agents/graphs/contributors"><img alt="Contributors" src="https://img.shields.io/github/contributors/NetoMouraJs/alethe-agents?style=flat-square"></a>
-    <a href="https://github.com/NetoMouraJs/alethe-agents/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/NetoMouraJs/alethe-agents?style=flat-square"></a>
-    <a href="https://github.com/NetoMouraJs/alethe-agents/issues"><img alt="Open issues" src="https://img.shields.io/github/issues/NetoMouraJs/alethe-agents?style=flat-square"></a>
+    <a href="https://github.com/NetoMouraJs/onetho/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/NetoMouraJs/onetho/ci.yml?branch=main&label=ci&style=flat-square"></a>
+    <a href="https://github.com/NetoMouraJs/onetho/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/NetoMouraJs/onetho?style=flat-square"></a>
+    <a href="https://github.com/NetoMouraJs/onetho/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/NetoMouraJs/onetho?style=flat-square"></a>
+    <a href="https://github.com/NetoMouraJs/onetho/graphs/contributors"><img alt="Contributors" src="https://img.shields.io/github/contributors/NetoMouraJs/onetho?style=flat-square"></a>
+    <a href="https://github.com/NetoMouraJs/onetho/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/NetoMouraJs/onetho?style=flat-square"></a>
+    <a href="https://github.com/NetoMouraJs/onetho/issues"><img alt="Open issues" src="https://img.shields.io/github/issues/NetoMouraJs/onetho?style=flat-square"></a>
   </p>
 
   <p align="center">
-    <a href="https://github.com/NetoMouraJs/alethe-agents/releases">Download</a>
+    <a href="https://github.com/NetoMouraJs/onetho/releases">Download</a>
     ·
-    <a href="https://github.com/NetoMouraJs/alethe-agents/issues/new?labels=bug">Report Bug</a>
+    <a href="https://github.com/NetoMouraJs/onetho/issues/new?labels=bug">Report Bug</a>
     ·
-    <a href="https://github.com/NetoMouraJs/alethe-agents/issues/new?labels=enhancement">Request Feature</a>
+    <a href="https://github.com/NetoMouraJs/onetho/issues/new?labels=enhancement">Request Feature</a>
     ·
     <a href="./SECURITY.md">Security</a>
     ·

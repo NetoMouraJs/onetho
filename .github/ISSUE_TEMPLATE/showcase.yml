@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Prefer to open a pull request? Edit [`SHOWCASE.md`](https://github.com/NetoMouraJs/alethe-agents/blob/main/SHOWCASE.md)
+        Prefer to open a pull request? Edit [`SHOWCASE.md`](https://github.com/NetoMouraJs/onetho/blob/main/SHOWCASE.md)
         directly — it's one line, and you end up in the contributors list.
 
         Otherwise fill this in and it will be added for you.

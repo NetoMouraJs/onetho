@@ -1,8 +1,8 @@
 blank_issues_enabled: true
 contact_links:
   - name: Looking for something to work on?
-    url: https://github.com/NetoMouraJs/alethe-agents/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22
+    url: https://github.com/NetoMouraJs/onetho/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22
     about: Scoped, newcomer-friendly issues. Comment on one to claim it.
   - name: Contributing guide
-    url: https://github.com/NetoMouraJs/alethe-agents/blob/main/CONTRIBUTING.md
+    url: https://github.com/NetoMouraJs/onetho/blob/main/CONTRIBUTING.md
     about: Setup, project layout, house rules, and how PRs get reviewed.
