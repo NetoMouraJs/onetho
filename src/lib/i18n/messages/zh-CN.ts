@@ -1280,7 +1280,7 @@ export const zhCN: Record<MessageKey, string> = {
   'whatsNew.v130.note8': '实验性窗口不透明度控制，通过Alethe查看桌面。',
   'whatsNew.forkBase': '基于 {upstream} v{version}，包含截至上游提交 {commit} 的更改。',
   'whatsNew.upstreamHeading': '{upstream} 版本',
-  'whatsNew.fork.v010.note1': '首个 Onetho 版本：拥有独立的名称、标识符、版本号和更新渠道。',
+  'whatsNew.fork.v010.note1': '首个 Onetho 版本：拥有独立的名称、图标、标识符、版本号和更新渠道。',
   'whatsNew.fork.v010.note2': '你命名的 Claude 会话现在会显示该名称。',
   'whatsNew.fork.v010.note3': '只要出现调整大小的光标，侧边栏的调整手柄就会显示。',
   'rightSidebar.backToTodo': '返回到待办事项',

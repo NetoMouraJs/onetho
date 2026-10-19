@@ -1553,7 +1553,7 @@ export const ptBR: Record<MessageKey, string> = {
   'whatsNew.forkBase': 'Baseado no {upstream} v{version}, até o commit {commit} do upstream.',
   'whatsNew.upstreamHeading': 'Versões do {upstream}',
   'whatsNew.fork.v010.note1':
-    'Primeira versão do Onetho, com nome, identificador, numeração de versões e canal de atualização próprios.',
+    'Primeira versão do Onetho, com nome, ícone, identificador, numeração de versões e canal de atualização próprios.',
   'whatsNew.fork.v010.note2': 'Uma sessão do Claude que você nomeou agora mostra esse nome.',
   'whatsNew.fork.v010.note3':
     'A alça de redimensionar da barra lateral aparece sempre que o cursor de redimensionar aparece.',

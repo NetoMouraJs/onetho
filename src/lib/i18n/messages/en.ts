@@ -1526,7 +1526,7 @@ export const en = {
   'whatsNew.forkBase': 'Built on {upstream} v{version}, up to upstream commit {commit}.',
   'whatsNew.upstreamHeading': '{upstream} releases',
   'whatsNew.fork.v010.note1':
-    'First Onetho release, with its own name, identifier, version line and update channel.',
+    'First Onetho release, with its own name, icon, identifier, version line and update channel.',
   'whatsNew.fork.v010.note2': 'A Claude session you named now shows that name.',
   'whatsNew.fork.v010.note3': 'The sidebar resize handle shows whenever the resize cursor does.',
   'rightSidebar.backToTodo': 'Back to Todo',

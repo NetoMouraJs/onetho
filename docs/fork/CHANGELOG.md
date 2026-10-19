@@ -8,12 +8,6 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
 
 ## [Unreleased]
 
-### Changed
-
-- Onetho has its own icon, the Open orbit ring, in the executable, the installer, the taskbar and the
-  four options of the app icon picker. The workspace empty state and the default profile picture
-  use it too.
-
 ## [0.1.0] - 2026-10-19
 
 Upstream base: Alethe 1.7.0 plus upstream `main` up to `e684e72` (`v1.7.0-259-ge684e72`).
@@ -22,8 +16,11 @@ Upstream base: Alethe 1.7.0 plus upstream `main` up to `e684e72` (`v1.7.0-259-ge
 
 - Its own identity: the name Onetho, the `onetho` terminal command, the `com.netomoura.onetho`
   identifier, and updates from this repository's releases.
-- Its own version line, starting at 0.1.0. The What's New panel lists Onetho's releases first, each
-  with its upstream base, then upstream's.
+- Its own icon, the Open orbit ring, in the executable, the installer, the taskbar and the four
+  options of the app icon picker. The workspace empty state and the default profile picture use it
+  too.
+- Its own version line, starting at 0.1.0, with release candidates (`0.1.0-rcNN`) before the tag.
+  The What's New panel lists Onetho's releases first, each with its upstream base, then upstream's.
 
 ### Fixed
 
