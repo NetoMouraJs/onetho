@@ -11,7 +11,8 @@ export type ForkRelease = ChangelogRelease & {
 }
 
 /** Onetho's own releases, curated by hand, newest first. Upstream's list in `changelogData.ts` stays
- * as upstream keeps it; `npm run release` checks this one. */
+ * as upstream keeps it; `npm run release` checks this one. Release candidates (X.Y.Z-rcNN) are not
+ * listed: they show the notes of X.Y.Z. */
 export const FORK_RELEASES: ForkRelease[] = [
   {
     version: '0.1.0',

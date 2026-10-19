@@ -8,6 +8,10 @@ This folder belongs to the fork alone — upstream never touches it, so it never
 conflicts. It starts with this README and grows as needed: when a topic outgrows a section, it gets
 its own file here and a line in this index.
 
+- [`CHANGELOG.md`](CHANGELOG.md) — Onetho's releases, each with the upstream code it is built on.
+- [`RELEASES.md`](RELEASES.md) — milestones, release candidates, final versions and the local build.
+- [`brand/`](brand/README.md) — the Onetho mark and icons, and how every bitmap is generated.
+
 ## Identity
 
 | | Value | Where |
@@ -17,7 +21,7 @@ its own file here and a line in this index.
 | Identifier | `com.netomoura.onetho` (dev: `com.netomoura.onetho.dev`) | same + `src-tauri/tauri.conf.json`, `tauri.dev.json` |
 | Icons | Open orbit ring; sources and how to regenerate in [`brand/`](brand/README.md) | `src-tauri/icons/`, `src-tauri/installer/*.bmp`, `src/assets/theme-icons/`, `src/assets/alethe-mark.svg` |
 | Repository | `NetoMouraJs/onetho` | `src/lib/brand.ts`, `plugin_catalog.rs`, `tauri.conf.json` (updater) |
-| Version | Own line, from `0.1.0`; upstream's version never carries over | `package.json`, `package-lock.json`, `tauri.conf.json`, `Cargo.toml`, `Cargo.lock` (`npm run release` stamps them all) |
+| Version | Own line, from `0.1.0`, with release candidates `X.Y.Z-rcNN` before each tag (see [Releases](#releases)); upstream's version never carries over | `package.json`, `package-lock.json`, `tauri.conf.json`, `Cargo.toml`, `Cargo.lock` (`npm run release` stamps them all) |
 | Changelog | [`CHANGELOG.md`](CHANGELOG.md), each release with its upstream base; What's New in `src/lib/forkChangelog.ts` | upstream's `docs/CHANGELOG.md` and `src/lib/changelogData.ts` stay as upstream keeps them |
 
 Translated texts are **not** edited: `translate()` (`src/lib/i18n/index.ts`) swaps "Alethe" for
@@ -32,6 +36,13 @@ Translated texts are **not** edited: `translate()` (`src/lib/i18n/index.ts`) swa
 4. **Generic improvements go upstream first** (issue/PR on Kc1t). Once accepted, the fork no longer
    has to carry them. Those PRs follow upstream's own rules in `AGENTS.md`: English only, a
    `docs/CHANGELOG.md` entry, and a `docs/MAC_PORT.md` entry with a `Mac-Port:` trailer.
+
+## Releases
+
+Each version has a GitHub milestone with the issues to close before it is tagged; every installer
+built on the way is a release candidate (`X.Y.Z-rcNN`, `npm run release rc`), and the final one is
+tagged `vX.Y.Z` (`npm run release final`). The whole process, with the local build, is in
+[`RELEASES.md`](RELEASES.md).
 
 ## Syncing with upstream
 

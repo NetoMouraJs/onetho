@@ -2,17 +2,22 @@
 /**
  * Version bump + commit + tag + push. Does NOT publish installers.
  *
- * Keeps the four sources of the version in sync:
- *   package.json · src-tauri/tauri.conf.json · src-tauri/Cargo.toml · src-tauri/Cargo.lock (alethe entry)
+ * Keeps the five sources of the version in sync:
+ *   package.json · package-lock.json · src-tauri/tauri.conf.json · src-tauri/Cargo.toml ·
+ *   src-tauri/Cargo.lock (alethe entry)
  *
  * Usage:
  *   npm run release            # patch:  1.2.0 -> 1.2.1
  *   npm run release minor      #         1.2.0 -> 1.3.0
  *   npm run release major      #         1.2.0 -> 2.0.0
  *   npm run release 1.5.0      # explicit version
+ *   npm run release rc         # next release candidate: 1.2.0-rc01 -> 1.2.0-rc02 (from 1.2.0: 1.2.1-rc01)
+ *   npm run release final      # release candidate to final: 1.2.0-rc02 -> 1.2.0
+ *   npm run release 1.3.0-rc01 # explicit release candidate
  *   npm run release -- --dry-run   # show what it would do, without writing or pushing
  *
- * Refuses to run when the in-app What's New panel has no notes for the new version.
+ * Refuses to run when the in-app What's New panel has no notes for the new version (a release
+ * candidate needs the notes of its final version).
  *
  * Pushing the tag does NOT trigger a build (release.yml only runs through workflow_dispatch).
  * To publish the installers afterwards: npm run release:publish
@@ -25,6 +30,7 @@ const dryRun = args.includes('--dry-run')
 const bumpArg = args.find((a) => !a.startsWith('--')) ?? 'patch'
 
 const PKG = 'package.json'
+const PKG_LOCK = 'package-lock.json'
 const TAURI = 'src-tauri/tauri.conf.json'
 const CARGO = 'src-tauri/Cargo.toml'
 const LOCK = 'src-tauri/Cargo.lock'
@@ -47,20 +53,34 @@ function fail(msg) {
 const dirty = sh('git status --porcelain')
 if (dirty) fail(`Working tree is dirty. Commit or discard before releasing:\n${dirty}`)
 
+// A version is X.Y.Z, or X.Y.Z-rcNN for a release candidate (two digits, so they sort as text too).
+const VERSION = String.raw`\d+\.\d+\.\d+(?:-rc\d{2})?`
+const rcLabel = (n) => `rc${String(n).padStart(2, '0')}`
+
 // 2) Current version (source: package.json).
 const pkgRaw = readFileSync(PKG, 'utf8')
-const cur = pkgRaw.match(/"version":\s*"(\d+)\.(\d+)\.(\d+)"/)
+const cur = pkgRaw.match(/"version":\s*"(\d+)\.(\d+)\.(\d+)(?:-rc(\d{2}))?"/)
 if (!cur) fail(`Version not found in ${PKG}`)
-const [major, minor, patch] = cur.slice(1).map(Number)
-const current = `${major}.${minor}.${patch}`
+const [major, minor, patch] = cur.slice(1, 4).map(Number)
+const rc = cur[4] ? Number(cur[4]) : null
+const base = `${major}.${minor}.${patch}`
+const current = rc ? `${base}-${rcLabel(rc)}` : base
 
 // 3) Next version.
 let next
-if (/^\d+\.\d+\.\d+$/.test(bumpArg)) next = bumpArg
+if (new RegExp(`^${VERSION}$`).test(bumpArg)) next = bumpArg
 else if (bumpArg === 'major') next = `${major + 1}.0.0`
 else if (bumpArg === 'minor') next = `${major}.${minor + 1}.0`
 else if (bumpArg === 'patch') next = `${major}.${minor}.${patch + 1}`
-else fail(`Invalid bump: "${bumpArg}". Use: patch | minor | major | X.Y.Z`)
+else if (bumpArg === 'rc') {
+  if (rc && rc >= 99) fail(`${current} is the last release candidate the two-digit format allows`)
+  next = rc ? `${base}-${rcLabel(rc + 1)}` : `${major}.${minor}.${patch + 1}-${rcLabel(1)}`
+} else if (bumpArg === 'final') {
+  if (!rc) fail(`${current} is not a release candidate`)
+  next = base
+} else fail(`Invalid bump: "${bumpArg}". Use: patch | minor | major | rc | final | X.Y.Z[-rcNN]`)
+// A release candidate shows the notes of the version it leads to.
+const notesVersion = next.replace(/-rc\d{2}$/, '')
 
 const tag = `v${next}`
 console.log(`\n  ${current}  →  ${next}   (tag ${tag})\n`)
@@ -70,11 +90,11 @@ console.log(`\n  ${current}  →  ${next}   (tag ${tag})\n`)
 //    written; the notes land in their own commit ahead of the bump.
 const whatsNew = readFileSync(WHATS_NEW, 'utf8')
 const listed = [...whatsNew.matchAll(/version:\s*'(\d+\.\d+\.\d+)'/g)].map((m) => m[1])
-if (!listed.includes(next)) {
+if (!listed.includes(notesVersion)) {
   fail(
-    `What's New has no notes for ${next} (newest listed: ${listed[0] ?? 'none'}).\n` +
-      `  Add a { version: '${next}', upstream, ... } entry at the top of ${WHATS_NEW}, with its\n` +
-      `  whatsNew.fork.v${next.replaceAll('.', '')}.note* keys in every locale under src/lib/i18n/messages/,\n` +
+    `What's New has no notes for ${notesVersion} (newest listed: ${listed[0] ?? 'none'}).\n` +
+      `  Add a { version: '${notesVersion}', upstream, ... } entry at the top of ${WHATS_NEW}, with its\n` +
+      `  whatsNew.fork.v${notesVersion.replaceAll('.', '')}.note* keys in every locale under src/lib/i18n/messages/,\n` +
       '  commit it, then run the release again.',
   )
 }
@@ -84,18 +104,26 @@ function bumpFile(path, regex, label = path) {
   const raw = readFileSync(path, 'utf8')
   const m = raw.match(regex)
   if (!m) fail(`Version not found in ${path}`)
-  const updated = raw.replace(regex, (full) => full.replace(m[1], next))
-  console.log(`  ~ ${label}  (${m[1]} → ${next})`)
+  // A global regex rewrites every match (package-lock.json holds the version twice).
+  const updated = raw.replace(regex, (full, found) => full.replace(found, next))
+  console.log(`  ~ ${label}  (${m[1] ?? current} → ${next})`)
   if (!dryRun) writeFileSync(path, updated)
 }
-bumpFile(PKG, /"version":\s*"(\d+\.\d+\.\d+)"/)
-bumpFile(TAURI, /"version":\s*"(\d+\.\d+\.\d+)"/)
-bumpFile(CARGO, /version\s*=\s*"(\d+\.\d+\.\d+)"/)
+bumpFile(PKG, new RegExp(`"version":\\s*"(${VERSION})"`))
+bumpFile(TAURI, new RegExp(`"version":\\s*"(${VERSION})"`))
+bumpFile(CARGO, new RegExp(`version\\s*=\\s*"(${VERSION})"`))
+
+// package-lock.json: the root and the "" package, both right after the package name.
+const toAdd = [PKG, TAURI, CARGO]
+if (existsSync(PKG_LOCK)) {
+  const name = JSON.parse(pkgRaw).name
+  bumpFile(PKG_LOCK, new RegExp(`"name":\\s*"${name}",\\s*"version":\\s*"(${VERSION})"`, 'g'))
+  toAdd.push(PKG_LOCK)
+}
 
 // Cargo.lock: only the entry of the crate itself (name = "alethe").
-const toAdd = [PKG, TAURI, CARGO]
 if (existsSync(LOCK)) {
-  bumpFile(LOCK, /name = "alethe"\r?\nversion = "(\d+\.\d+\.\d+)"/, LOCK)
+  bumpFile(LOCK, new RegExp(`name = "alethe"\\r?\\nversion = "(${VERSION})"`), LOCK)
   toAdd.push(LOCK)
 }
 
