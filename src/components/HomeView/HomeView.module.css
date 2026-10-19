@@ -1484,6 +1484,15 @@
   font-size: 11px;
   color: var(--text-quaternary);
 }
+.usageLoader {
+  color: var(--text-tertiary);
+  animation: spinRefresh 0.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .usageLoader {
+    animation-duration: 2.4s;
+  }
+}
 .usageEmptyAction {
   composes: resetCreditButton;
   margin-top: 6px;

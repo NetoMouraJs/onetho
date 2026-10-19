@@ -1,8 +1,8 @@
-import { Clock, RefreshCw } from 'lucide-react'
-import { type ReactNode,useState } from 'react'
+import { Clock, Loader2, RefreshCw } from 'lucide-react'
+import { type ReactNode, useEffect, useState } from 'react'
 
 import { getCachedAntigravityUsage } from '../../lib/antigravityUsageCache'
-import { loadClaudeUsage } from '../../lib/claudeUsageCache'
+import { claudeUsageNextRequestAt, loadClaudeUsage } from '../../lib/claudeUsageCache'
 import { traceCachedCodexUsage } from '../../lib/codexUsageCache'
 import { getLocale, translate, useT } from '../../lib/i18n'
 import { getCachedKimiUsage } from '../../lib/kimiUsageCache'
@@ -168,6 +168,8 @@ function CardHead({
   accent,
   hasData,
   onRefresh,
+  refreshBlockedTitle,
+  loading = false,
 }: {
   badgeClass: string
   icon: ReactNode
@@ -176,9 +178,14 @@ function CardHead({
   accent: string
   hasData: boolean
   onRefresh: () => Promise<void>
+  /** Set while a refresh would not reach the provider; disables the button and says why. */
+  refreshBlockedTitle?: string | null
+  /** A read started elsewhere (a poll, the modal opening) is on its way. */
+  loading?: boolean
 }) {
   const t = useT()
-  const [refreshing, setRefreshing] = useState(false)
+  const [clicked, setRefreshing] = useState(false)
+  const refreshing = clicked || loading
   const handle = async () => {
     setRefreshing(true)
     try {
@@ -203,8 +210,10 @@ function CardHead({
           type="button"
           className={styles.iconBtn}
           onClick={handle}
-          disabled={refreshing}
-          title={hasData ? t('widget.refreshUsage') : t('widget.tryAgain')}
+          disabled={refreshing || !!refreshBlockedTitle}
+          title={
+            refreshBlockedTitle ?? (hasData ? t('widget.refreshUsage') : t('widget.tryAgain'))
+          }
         >
           <RefreshCw size={12} className={refreshing ? styles.iconBtnSpin : undefined} />
         </button>
@@ -300,9 +309,22 @@ function ClaudeCard({ usage }: { usage: ClaudeUsage | null }) {
   const t = useT()
   const usageError = useUiStore((s) => s.claudeUsageError)
   const retryAt = useUiStore((s) => s.claudeUsageRetryAt)
+  const loading = useUiStore((s) => s.claudeUsageLoading)
   const accent = 'var(--agent-claude)'
-  const rateLimited = usageError === 'rate_limited' && retryAt !== null
+  const nextRequestAt = claudeUsageNextRequestAt()
+  // Re-render when the next request becomes possible, so the button comes back on its own.
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const wait = nextRequestAt - Date.now()
+    if (wait <= 0) return
+    const timer = window.setTimeout(() => setTick((n) => n + 1), wait + 50)
+    return () => window.clearTimeout(timer)
+  }, [nextRequestAt])
+  const now = Date.now()
+  const rateLimited = usageError === 'rate_limited' && retryAt !== null && retryAt > now
   const retryHint = rateLimited ? t('widget.usageRetryAt', { time: formatClock(retryAt) }) : null
+  const refreshBlockedTitle =
+    nextRequestAt > now ? t('widget.usageRetryAt', { time: formatClock(nextRequestAt) }) : null
 
   const head = (
     <CardHead
@@ -314,11 +336,27 @@ function ClaudeCard({ usage }: { usage: ClaudeUsage | null }) {
       // A reading kept from before a failed refresh is not live.
       hasData={!!usage && !usageError}
       onRefresh={refreshClaude}
+      refreshBlockedTitle={refreshBlockedTitle}
+      loading={loading}
     />
   )
 
+  // Without a reading, a read on its way says so instead of reporting the last failure.
+  if (!usage && loading) {
+    return (
+      <div className={styles.usageCard}>
+        {head}
+        <div className={styles.usageEmpty} role="status">
+          <Loader2 size={16} className={styles.usageLoader} />
+          <span className={styles.usageEmptyHint}>{t('widget.usageLoading')}</span>
+        </div>
+      </div>
+    )
+  }
+
   if (!usage) {
-    const unavailable = usageError === 'unavailable'
+    // A cooldown that has run out leaves a failed read with nothing to wait for.
+    const unavailable = usageError === 'unavailable' || usageError === 'rate_limited'
     return (
       <div className={styles.usageCard}>
         {head}

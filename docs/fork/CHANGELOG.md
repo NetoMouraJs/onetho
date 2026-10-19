@@ -15,11 +15,12 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
 
 ### Fixed
 
-- Claude usage no longer stays unavailable after the usage service rate limits it. The orchestrator
-  reads usage through the shared cache instead of once a minute per pane, and after a refusal every
-  read waits for the time the service asks for (or a growing backoff) before trying again. The card
-  says it is rate limited and when it will try next, and a reading kept from before is marked as
-  the last reading.
+- Onetho no longer keeps hitting the Claude usage service while it rate limits. The orchestrator
+  reads usage through the shared cache instead of once a minute per pane, requests are at least
+  30 seconds apart, and after a refusal no request goes out until a backoff that grows from one
+  minute to fifteen ends, even across restarts. The card says it is rate limited and when it will
+  try next, its refresh button stays off until then, a reading kept from before is marked as the
+  last reading, and a spinner shows while a read is on its way.
 
 ## [0.1.0] - 2026-10-19
 

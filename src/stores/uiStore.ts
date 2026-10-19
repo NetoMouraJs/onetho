@@ -102,6 +102,8 @@ type UiState = {
   claudeUsageError: 'no_token' | 'unavailable' | 'rate_limited' | null
   /** When a rate-limited Claude usage read may be tried again. */
   claudeUsageRetryAt: number | null
+  /** A Claude usage read is on its way. */
+  claudeUsageLoading: boolean
   codexUsage: CodexUsage | null
   antigravityUsage: AntigravityUsage | null
   kimiUsage: KimiUsage | null
@@ -176,6 +178,7 @@ type UiState = {
     value: 'no_token' | 'unavailable' | 'rate_limited' | null,
     retryAt?: number | null,
   ) => void
+  setClaudeUsageLoading: (value: boolean) => void
   setCodexUsage: (value: CodexUsage | null) => void
   setAntigravityUsage: (value: AntigravityUsage | null) => void
   setKimiUsage: (value: KimiUsage | null) => void
@@ -232,6 +235,7 @@ export const useUiStore = create<UiState>((set) => ({
   claudeUsage: null,
   claudeUsageError: null,
   claudeUsageRetryAt: null,
+  claudeUsageLoading: false,
   codexUsage: null,
   antigravityUsage: null,
   kimiUsage: null,
@@ -289,6 +293,7 @@ export const useUiStore = create<UiState>((set) => ({
   setClaudeUsage: (value) => set({ claudeUsage: value }),
   setClaudeUsageError: (value, retryAt = null) =>
     set({ claudeUsageError: value, claudeUsageRetryAt: retryAt }),
+  setClaudeUsageLoading: (value) => set({ claudeUsageLoading: value }),
   setCodexUsage: (value) => set({ codexUsage: value }),
   setAntigravityUsage: (value) => set({ antigravityUsage: value }),
   setKimiUsage: (value) => set({ kimiUsage: value }),

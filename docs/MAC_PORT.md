@@ -36,6 +36,8 @@ Mac synced through: `v1.7.0` (`80e44a3`)
 
 ## Unreleased
 
+- `pending` · `ui` · fix(usage): keep Claude usage requests apart and back off on Retry-After 0
+  - Files: `src/lib/claudeUsageCache.ts`, `src/components/HomeView/UsageStrip.tsx`
 - `pending` · `ui` · fix(usage): hold Claude usage requests back after a 429
   - Files: `src/lib/claudeUsageCache.ts`, `src/hooks/useOrchestratorQuotaWarnings.ts`, `src-tauri/src/claude_usage.rs`
 - `pending` · `ui` · feat(diagnostics): add local Dev diagnostics for usage refreshes and frontend errors
