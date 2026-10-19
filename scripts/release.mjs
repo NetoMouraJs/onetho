@@ -102,11 +102,12 @@ if (!listed.includes(notesVersion)) {
 // 5) Rewrite the version (first occurrence) in each file.
 function bumpFile(path, regex, label = path) {
   const raw = readFileSync(path, 'utf8')
-  const m = raw.match(regex)
+  // Read the first match without the global flag, so the capture group comes back.
+  const m = raw.match(new RegExp(regex.source, regex.flags.replace('g', '')))
   if (!m) fail(`Version not found in ${path}`)
   // A global regex rewrites every match (package-lock.json holds the version twice).
   const updated = raw.replace(regex, (full, found) => full.replace(found, next))
-  console.log(`  ~ ${label}  (${m[1] ?? current} → ${next})`)
+  console.log(`  ~ ${label}  (${m[1]} → ${next})`)
   if (!dryRun) writeFileSync(path, updated)
 }
 bumpFile(PKG, new RegExp(`"version":\\s*"(${VERSION})"`))
