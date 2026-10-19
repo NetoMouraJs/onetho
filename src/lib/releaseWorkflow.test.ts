@@ -2,8 +2,13 @@ import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-const ciWorkflow = readFileSync('.github/workflows/ci.yml', 'utf8')
-const releaseWorkflow = readFileSync('.github/workflows/release.yml', 'utf8')
+// Checkouts with core.autocrlf=true have CRLF line endings; the parsing below expects LF.
+function readWorkflow(path: string): string {
+  return readFileSync(path, 'utf8').replace(/\r\n/g, '\n')
+}
+
+const ciWorkflow = readWorkflow('.github/workflows/ci.yml')
+const releaseWorkflow = readWorkflow('.github/workflows/release.yml')
 
 function jobBlocks(workflow: string): string[] {
   const lines = workflow.split('\n')
