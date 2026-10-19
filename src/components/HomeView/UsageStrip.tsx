@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useState } from 'react'
 import { getCachedAntigravityUsage } from '../../lib/antigravityUsageCache'
 import { claudeUsageNextRequestAt, loadClaudeUsage } from '../../lib/claudeUsageCache'
 import { traceCachedCodexUsage } from '../../lib/codexUsageCache'
+import { formatRelativeTimestamp } from '../../lib/greeting'
 import { getLocale, translate, useT } from '../../lib/i18n'
 import { getCachedKimiUsage } from '../../lib/kimiUsageCache'
 import {
@@ -481,7 +482,20 @@ function CodexCard({
 }) {
   const t = useT()
   const openModal = useUiStore((s) => s.openModal_)
+  const source = useUiStore((s) => s.codexUsageSource)
   const accent = 'var(--agent-codex)'
+  // Keeps the reading's age current between readings.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!source) return
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [source])
+  const sourceLabel = source
+    ? t(source.kind === 'session' ? 'widget.fromSession' : 'widget.fromApi', {
+        when: formatRelativeTimestamp(source.at, Math.max(now, source.at)),
+      })
+    : null
 
   const head = (
     <CardHead
@@ -582,7 +596,7 @@ function CodexCard({
       </div>
       <CardFoot
         accent={accent}
-        left={has5h ? `5h · ${t('widget.week')}` : t('widget.week')}
+        left={sourceLabel ?? (has5h ? `5h · ${t('widget.week')}` : t('widget.week'))}
         right={t('widget.peak', { v: `${pctNum(maxUtil)}%` })}
       />
     </div>

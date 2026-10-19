@@ -105,6 +105,8 @@ type UiState = {
   /** A Claude usage read is on its way. */
   claudeUsageLoading: boolean
   codexUsage: CodexUsage | null
+  /** Where the Codex reading on screen came from, and when it was taken. */
+  codexUsageSource: { kind: 'session' | 'api'; at: number } | null
   antigravityUsage: AntigravityUsage | null
   kimiUsage: KimiUsage | null
 
@@ -180,6 +182,7 @@ type UiState = {
   ) => void
   setClaudeUsageLoading: (value: boolean) => void
   setCodexUsage: (value: CodexUsage | null) => void
+  setCodexUsageSource: (value: { kind: 'session' | 'api'; at: number } | null) => void
   setAntigravityUsage: (value: AntigravityUsage | null) => void
   setKimiUsage: (value: KimiUsage | null) => void
   setFocusedTerminal: (id: string | null) => void
@@ -237,6 +240,7 @@ export const useUiStore = create<UiState>((set) => ({
   claudeUsageRetryAt: null,
   claudeUsageLoading: false,
   codexUsage: null,
+  codexUsageSource: null,
   antigravityUsage: null,
   kimiUsage: null,
   focusedTerminalId: null,
@@ -294,7 +298,10 @@ export const useUiStore = create<UiState>((set) => ({
   setClaudeUsageError: (value, retryAt = null) =>
     set({ claudeUsageError: value, claudeUsageRetryAt: retryAt }),
   setClaudeUsageLoading: (value) => set({ claudeUsageLoading: value }),
-  setCodexUsage: (value) => set({ codexUsage: value }),
+  // A cleared reading has no source left to name.
+  setCodexUsage: (value) =>
+    set(value ? { codexUsage: value } : { codexUsage: null, codexUsageSource: null }),
+  setCodexUsageSource: (value) => set({ codexUsageSource: value }),
   setAntigravityUsage: (value) => set({ antigravityUsage: value }),
   setKimiUsage: (value) => set({ kimiUsage: value }),
   setFocusedTerminal: (id) => set({ focusedTerminalId: id }),

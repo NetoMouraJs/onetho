@@ -1455,6 +1455,8 @@ export const zhCN: Record<MessageKey, string> = {
   'widget.usageRetryAt': '将于 {time} 重试',
   'widget.usageStale': '上次读数',
   'widget.usageLoading': '正在加载用量…',
+  'widget.fromSession': '会话 · {when}',
+  'widget.fromApi': 'API · {when}',
   'widget.usageOff': '用量读取已关闭',
   'widget.usageOffHint': '开启后将使用你的 {provider} 登录信息并联系 {vendor}',
   'widget.turnOnUsage': '开启',

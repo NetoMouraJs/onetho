@@ -197,6 +197,136 @@ fn parse_wham_usage(body: &Value, credits: Option<&Value>) -> Result<CodexUsage,
     })
 }
 
+/// A Codex usage reading taken from a session file, and when Codex recorded it.
+#[derive(Debug, Serialize, Clone)]
+pub struct CodexSessionUsage {
+    pub usage: CodexUsage,
+    /// Epoch milliseconds of the `token_count` event the reading comes from.
+    pub at_ms: f64,
+}
+
+static LATEST_SESSION_USAGE: std::sync::Mutex<Option<CodexSessionUsage>> =
+    std::sync::Mutex::new(None);
+
+fn parse_rollout_window(value: Option<&Value>) -> CodexUsageWindow {
+    let field = |key: &str| value.and_then(|v| v.get(key)).and_then(Value::as_f64);
+    CodexUsageWindow {
+        used_percent: field("used_percent").unwrap_or(0.0),
+        window_minutes: field("window_minutes").map_or(0, |minutes| minutes as u64),
+        resets_at_ms: field("resets_at").map_or(0.0, |secs| secs * 1000.0),
+    }
+}
+
+/// The rate limits in one rollout line: an `event_msg` / `token_count` event for the `codex` limit.
+fn parse_rollout_line(line: &str) -> Option<CodexSessionUsage> {
+    if !line.contains("\"token_count\"") {
+        return None;
+    }
+    let event: Value = serde_json::from_str(line).ok()?;
+    let payload = event.get("payload")?;
+    if payload.get("type")?.as_str()? != "token_count" {
+        return None;
+    }
+    let limits = payload.get("rate_limits").filter(|v| !v.is_null())?;
+    if limits
+        .get("limit_id")
+        .and_then(Value::as_str)
+        .is_some_and(|id| id != "codex")
+    {
+        return None;
+    }
+    let at_ms = event.get("timestamp").and_then(timestamp_ms)?;
+    let (primary, secondary) = by_duration(
+        parse_rollout_window(limits.get("primary")),
+        parse_rollout_window(limits.get("secondary")),
+    );
+    Some(CodexSessionUsage {
+        usage: CodexUsage {
+            primary,
+            secondary,
+            plan: limits
+                .get("plan_type")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            rate_limited: limits
+                .get("rate_limit_reached_type")
+                .is_some_and(|reached| !reached.is_null()),
+            reset_credits: 0,
+            reset_credit_items: Vec::new(),
+        },
+        at_ms,
+    })
+}
+
+/// The newest reading in a rollout. Its lines can run past a megabyte, so the tail read grows
+/// until it holds a `token_count` event or covers the whole file.
+pub(crate) fn rollout_usage(path: &std::path::Path) -> Option<CodexSessionUsage> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    for tail in [256 * 1024_u64, 4 * 1024 * 1024, 32 * 1024 * 1024] {
+        let start = len.saturating_sub(tail);
+        file.seek(SeekFrom::Start(start)).ok()?;
+        let mut bytes = Vec::new();
+        Read::take(&mut file, tail).read_to_end(&mut bytes).ok()?;
+        let text = String::from_utf8_lossy(&bytes);
+        // A read that starts mid-file cuts its first line.
+        let skip = usize::from(start > 0);
+        let found = text
+            .lines()
+            .skip(skip)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .find_map(parse_rollout_line);
+        if found.is_some() || start == 0 {
+            return found;
+        }
+    }
+    None
+}
+
+/// Keeps `reading` when it is newer than the one held, and says whether it was.
+pub(crate) fn offer_session_usage(reading: &CodexSessionUsage) -> bool {
+    let Ok(mut latest) = LATEST_SESSION_USAGE.lock() else {
+        return false;
+    };
+    if latest.as_ref().is_some_and(|held| held.at_ms >= reading.at_ms) {
+        return false;
+    }
+    *latest = Some(reading.clone());
+    true
+}
+
+/// The newest Codex usage recorded in a session file, read without touching the network.
+#[tauri::command]
+pub async fn get_codex_session_usage() -> Option<CodexSessionUsage> {
+    if let Some(held) = LATEST_SESSION_USAGE.lock().ok().and_then(|held| held.clone()) {
+        return Some(held);
+    }
+    tokio::task::spawn_blocking(|| {
+        let root = crate::codex_sessions::codex_sessions_dir()?;
+        let mut files = Vec::new();
+        crate::codex_sessions::collect_jsonl_files(&root, &mut files);
+        let mut by_age: Vec<_> = files
+            .into_iter()
+            .filter_map(|path| Some((std::fs::metadata(&path).ok()?.modified().ok()?, path)))
+            .collect();
+        by_age.sort_by(|a, b| b.0.cmp(&a.0));
+        // A session that has just started has no token_count yet; an older one still does.
+        let reading = by_age
+            .iter()
+            .take(5)
+            .find_map(|(_, path)| rollout_usage(path))?;
+        offer_session_usage(&reading);
+        Some(reading)
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
 /// Codex keeps its ChatGPT login in `$CODEX_HOME/auth.json` (default `~/.codex`).
 fn codex_auth_path() -> Option<PathBuf> {
     std::env::var_os("CODEX_HOME")
@@ -541,5 +671,108 @@ mod tests {
             super::oauth_credentials(&json!({ "tokens": { "access_token": "" } })),
             None
         );
+    }
+
+    fn token_count(timestamp: &str, rate_limits: serde_json::Value) -> String {
+        json!({
+            "timestamp": timestamp,
+            "type": "event_msg",
+            "payload": { "type": "token_count", "info": null, "rate_limits": rate_limits }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn reads_the_rate_limits_codex_records_in_a_rollout() {
+        let line = token_count(
+            "2026-10-19T20:29:15.781Z",
+            json!({
+                "limit_id": "codex",
+                "primary": { "used_percent": 36, "window_minutes": 300, "resets_at": 1_792_452_840 },
+                "secondary": { "used_percent": 14, "window_minutes": 10_080, "resets_at": 1_792_922_635 },
+                "plan_type": "plus",
+                "rate_limit_reached_type": null
+            }),
+        );
+        let reading = super::parse_rollout_line(&line).expect("reading");
+        assert_eq!(reading.at_ms, 1_792_441_755_781.0);
+        assert_eq!(reading.usage.primary.used_percent, 36.0);
+        assert_eq!(reading.usage.primary.window_minutes, 300);
+        assert_eq!(reading.usage.primary.resets_at_ms, 1_792_452_840_000.0);
+        assert_eq!(reading.usage.secondary.window_minutes, 10_080);
+        assert_eq!(reading.usage.plan, "plus");
+        assert!(!reading.usage.rate_limited);
+    }
+
+    #[test]
+    fn rollout_reading_tolerates_a_missing_window_and_flags_a_reached_limit() {
+        let line = token_count(
+            "2026-10-19T20:29:15Z",
+            json!({
+                "primary": null,
+                "secondary": { "used_percent": 100, "window_minutes": 10_080, "resets_at": 1_792_922_635 },
+                "rate_limit_reached_type": "secondary"
+            }),
+        );
+        let reading = super::parse_rollout_line(&line).expect("reading");
+        assert_eq!(reading.usage.primary.window_minutes, 0);
+        assert_eq!(reading.usage.secondary.used_percent, 100.0);
+        assert!(reading.usage.rate_limited);
+        assert_eq!(reading.usage.plan, "");
+    }
+
+    #[test]
+    fn rollout_lines_without_codex_limits_are_ignored() {
+        let other_limit = token_count(
+            "2026-10-19T20:29:15Z",
+            json!({ "limit_id": "code_review", "primary": { "used_percent": 5 } }),
+        );
+        assert!(super::parse_rollout_line(&other_limit).is_none());
+        assert!(super::parse_rollout_line(&token_count("2026-10-19T20:29:15Z", json!(null))).is_none());
+        let message = json!({
+            "timestamp": "2026-10-19T20:29:15Z",
+            "type": "response_item",
+            "payload": { "type": "message", "content": "token_count" }
+        });
+        assert!(super::parse_rollout_line(&message.to_string()).is_none());
+    }
+
+    #[test]
+    fn newest_rollout_reading_is_found_past_long_lines() {
+        let dir = std::env::temp_dir().join(format!("onetho-rollout-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("rollout-test.jsonl");
+        let reading = |percent: u32, at: &str| {
+            token_count(
+                at,
+                json!({ "primary": { "used_percent": percent, "window_minutes": 300, "resets_at": 1 } }),
+            )
+        };
+        // The newest reading sits behind a line longer than the first tail read.
+        let long_line = json!({ "type": "response_item", "payload": { "text": "x".repeat(300 * 1024) } });
+        let body = [
+            reading(10, "2026-10-19T20:00:00Z"),
+            reading(20, "2026-10-19T20:10:00Z"),
+            long_line.to_string(),
+        ]
+        .join("\n");
+        std::fs::write(&path, body).unwrap();
+
+        let found = super::rollout_usage(&path).expect("reading");
+        assert_eq!(found.usage.primary.used_percent, 20.0);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn only_a_newer_session_reading_replaces_the_held_one() {
+        let line = |at: &str| {
+            super::parse_rollout_line(&token_count(at, json!({ "primary": { "used_percent": 1 } })))
+                .expect("reading")
+        };
+        let newer = line("2030-01-01T00:00:10Z");
+        let older = line("2030-01-01T00:00:05Z");
+        assert!(super::offer_session_usage(&newer));
+        assert!(!super::offer_session_usage(&older));
+        assert!(!super::offer_session_usage(&newer));
     }
 }

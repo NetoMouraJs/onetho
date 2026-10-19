@@ -1708,6 +1708,8 @@ export const en = {
   'widget.usageRetryAt': 'next try at {time}',
   'widget.usageStale': 'last reading',
   'widget.usageLoading': 'loading usage…',
+  'widget.fromSession': 'session · {when}',
+  'widget.fromApi': 'API · {when}',
   'widget.kimiUsageHint': 'Sign in with kimi login, then refresh to see your live quotas.',
   'widget.kimiNotSignedIn': 'not signed in to Kimi',
   'widget.kimiMonthlyCode': 'monthly code',

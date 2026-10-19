@@ -1,11 +1,70 @@
+import { useUiStore } from '../stores/uiStore'
 import { classifyUsageFailure, type DevDiagnosticSource,finishDevTrace, startDevTrace } from './devDiagnostics'
-import { getCodexUsage } from './tauri'
+import { type CodexSessionUsage, type CodexUsage, getCodexUsage } from './tauri'
 import { makeTtlCache } from './ttlCache'
-import { isUsageAccessOff } from './usageAccess'
+import { hasUsageAccess, isUsageAccessOff } from './usageAccess'
 
 const TTL_MS = 60_000
+/** How long a reading pushed by a Codex session stands in for the API. */
+const SESSION_FRESH_MS = 5 * 60_000
 
-export const getCachedCodexUsage = makeTtlCache(getCodexUsage, TTL_MS)
+let session: CodexSessionUsage | null = null
+let lastApi: { usage: CodexUsage; at: number } | null = null
+
+/** Reset credits only come from the API: a session reading carries the last ones it reported. */
+function withApiCredits(usage: CodexUsage): CodexUsage {
+  if (!lastApi) return usage
+  return {
+    ...usage,
+    reset_credits: lastApi.usage.reset_credits,
+    reset_credit_items: lastApi.usage.reset_credit_items,
+  }
+}
+
+const getCachedApiUsage = makeTtlCache(async () => {
+  const usage = await getCodexUsage()
+  lastApi = { usage, at: Date.now() }
+  return usage
+}, TTL_MS)
+
+/**
+ * Codex usage from whichever source is newer: the reading the last Codex turn recorded in its
+ * session file, or the API. A recent session reading spares the API call; a forced read always
+ * asks the API, which also counts what other devices used.
+ */
+export async function getCachedCodexUsage(force = false): Promise<CodexUsage> {
+  const { setCodexUsageSource } = useUiStore.getState()
+  if (
+    !force &&
+    session &&
+    Date.now() - session.at_ms < SESSION_FRESH_MS &&
+    session.at_ms >= (lastApi?.at ?? 0)
+  ) {
+    setCodexUsageSource({ kind: 'session', at: session.at_ms })
+    return withApiCredits(session.usage)
+  }
+  const usage = await getCachedApiUsage(force)
+  if (lastApi) setCodexUsageSource({ kind: 'api', at: lastApi.at })
+  return usage
+}
+
+/** Takes a reading pushed by the session watcher and shows it when it is the newest. */
+export function receiveCodexSessionUsage(reading: CodexSessionUsage | null): void {
+  if (!reading || !hasUsageAccess('codex')) return
+  if (session && session.at_ms >= reading.at_ms) return
+  session = reading
+  // The API already answered with something more recent.
+  if (lastApi && lastApi.at > reading.at_ms) return
+  const { setCodexUsage, setCodexUsageSource } = useUiStore.getState()
+  setCodexUsage(withApiCredits(reading.usage))
+  setCodexUsageSource({ kind: 'session', at: reading.at_ms })
+}
+
+/** Forgets both sources; for tests. */
+export function resetCodexUsageSources(): void {
+  session = null
+  lastApi = null
+}
 
 export async function traceCachedCodexUsage(
   force: boolean,
@@ -18,7 +77,7 @@ export async function traceCachedCodexUsage(
     return usage
   } catch (error) {
     finishDevTrace(trace, isUsageAccessOff(error) ? 'skipped' : 'failed',
-      isUsageAccessOff(error) ? undefined : classifyUsageFailure(error), error)
+      isUsageAccessOff(error) ? undefined : classifyUsageFailure(error))
     throw error
   }
 }

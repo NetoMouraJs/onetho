@@ -1736,6 +1736,8 @@ export const ptBR: Record<MessageKey, string> = {
   'widget.usageRetryAt': 'nova tentativa às {time}',
   'widget.usageStale': 'última leitura',
   'widget.usageLoading': 'carregando uso…',
+  'widget.fromSession': 'sessão · {when}',
+  'widget.fromApi': 'API · {when}',
   'widget.kimiUsageHint': 'Faça login com kimi login e atualize para ver suas quotas ao vivo.',
   'widget.kimiNotSignedIn': 'sem login no Kimi',
   'widget.kimiMonthlyCode': 'código mensal',

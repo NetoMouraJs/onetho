@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 import {
   classifyUsageFailure,
@@ -70,6 +71,26 @@ export type CodexUsage = {
   rate_limited: boolean
   reset_credits: number
   reset_credit_items?: CodexResetCredit[]
+}
+
+/** A Codex usage reading taken from a session file, and when Codex recorded it. */
+export type CodexSessionUsage = {
+  usage: CodexUsage
+  at_ms: number
+}
+
+/** The newest Codex usage recorded in a session file; no network involved. */
+export async function getCodexSessionUsage(): Promise<CodexSessionUsage | null> {
+  return withUsageAccess('codex', () =>
+    invoke<CodexSessionUsage | null>('get_codex_session_usage'),
+  )
+}
+
+/** Codex usage as the session watcher reads it, every time a Codex turn records it. */
+export function onCodexSessionUsage(
+  handler: (reading: CodexSessionUsage) => void,
+): Promise<UnlistenFn> {
+  return listen<CodexSessionUsage>('usage://codex', (event) => handler(event.payload))
 }
 
 export type CodexResetCredit = {

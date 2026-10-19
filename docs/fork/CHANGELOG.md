@@ -12,6 +12,9 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
 
 - A local Dev diagnostics dashboard records Claude and Codex usage refresh attempts and frontend failures with safe metadata, correlation IDs, filters and JSON export.
 - Error rows in Dev diagnostics now expand to show their event details and a sanitized frontend stack when available.
+- Codex usage updates on every Codex turn, read from the session files Codex already writes, so the
+  card no longer waits for the next poll and the API is asked less often. The card says whether its
+  reading came from a session or the API, and how old it is.
 
 ### Fixed
 

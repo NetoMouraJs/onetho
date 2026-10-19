@@ -10,6 +10,8 @@ use tauri::{AppHandle, Emitter};
 use crate::codex_sessions::{collect_jsonl_files, parse_codex_session};
 
 const WATCH_RETRY: Duration = Duration::from_secs(30);
+/// Codex appends to a rollout many times per turn; its usage is read once the burst settles.
+const USAGE_SETTLE: Duration = Duration::from_millis(750);
 
 fn watch_dir(watcher: &mut RecommendedWatcher, dir: &Option<PathBuf>) -> bool {
     dir.as_ref()
@@ -42,6 +44,17 @@ fn announce_codex_rollout(app: &AppHandle, announced: &mut HashSet<PathBuf>, pat
     );
 }
 
+/// Pushes the usage Codex just recorded, so the app does not have to ask the API for it.
+fn push_codex_usage(app: &AppHandle, paths: &mut HashSet<PathBuf>) {
+    for path in paths.drain() {
+        if let Some(reading) = crate::codex_usage::rollout_usage(&path) {
+            if crate::codex_usage::offer_session_usage(&reading) {
+                let _ = app.emit("usage://codex", reading);
+            }
+        }
+    }
+}
+
 pub fn start_watcher(app: AppHandle) {
     std::thread::spawn(move || {
         let (tx, rx) = channel();
@@ -71,7 +84,13 @@ pub fn start_watcher(app: AppHandle) {
         eprintln!("[session_watcher] observando sessões");
 
         let mut next_retry = Instant::now() + WATCH_RETRY;
+        let mut usage_paths: HashSet<PathBuf> = HashSet::new();
+        let mut usage_due: Option<Instant> = None;
         loop {
+            if usage_due.is_some_and(|due| Instant::now() >= due) {
+                usage_due = None;
+                push_codex_usage(&app, &mut usage_paths);
+            }
             if Instant::now() >= next_retry {
                 next_retry = Instant::now() + WATCH_RETRY;
                 watching_claude = watching_claude || watch_dir(&mut watcher, &claude);
@@ -89,10 +108,15 @@ pub fn start_watcher(app: AppHandle) {
             }
             let all_watched =
                 (watching_claude || claude.is_none()) && (watching_codex || codex.is_none());
-            let received = if all_watched {
-                rx.recv().map_err(|_| RecvTimeoutError::Disconnected)
-            } else {
-                rx.recv_timeout(next_retry.saturating_duration_since(Instant::now()))
+            let wake = match (all_watched, usage_due) {
+                (true, None) => None,
+                (true, Some(due)) => Some(due),
+                (false, None) => Some(next_retry),
+                (false, Some(due)) => Some(due.min(next_retry)),
+            };
+            let received = match wake {
+                None => rx.recv().map_err(|_| RecvTimeoutError::Disconnected),
+                Some(at) => rx.recv_timeout(at.saturating_duration_since(Instant::now())),
             };
             let event = match received {
                 Ok(Ok(event)) => event,
@@ -110,6 +134,8 @@ pub fn start_watcher(app: AppHandle) {
                     let _ = app.emit("session://new", serde_json::json!({ "agent": "claude" }));
                 } else if codex.as_ref().is_some_and(|c| path.starts_with(c)) {
                     announce_codex_rollout(&app, &mut announced_codex, &path);
+                    usage_due.get_or_insert_with(|| Instant::now() + USAGE_SETTLE);
+                    usage_paths.insert(path);
                 }
             }
         }
