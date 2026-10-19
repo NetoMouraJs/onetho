@@ -8,6 +8,12 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
 
 ## [Unreleased]
 
+### Changed
+
+- Onetho has its own icon, the Open orbit ring, in the executable, the installer, the taskbar and the
+  four options of the app icon picker. The workspace empty state and the default profile picture
+  use it too.
+
 ## [0.1.0] - 2026-10-19
 
 Upstream base: Alethe 1.7.0 plus upstream `main` up to `e684e72` (`v1.7.0-259-ge684e72`).

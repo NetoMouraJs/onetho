@@ -15,6 +15,7 @@ its own file here and a line in this index.
 | Name | `Onetho` | `src/lib/brand.ts`, `src-tauri/src/brand.rs` |
 | Terminal command | `onetho` | same |
 | Identifier | `com.netomoura.onetho` (dev: `com.netomoura.onetho.dev`) | same + `src-tauri/tauri.conf.json`, `tauri.dev.json` |
+| Icons | Open orbit ring; sources and how to regenerate in [`brand/`](brand/README.md) | `src-tauri/icons/`, `src-tauri/installer/*.bmp`, `src/assets/theme-icons/`, `src/assets/alethe-mark.svg` |
 | Repository | `NetoMouraJs/onetho` | `src/lib/brand.ts`, `plugin_catalog.rs`, `tauri.conf.json` (updater) |
 | Version | Own line, from `0.1.0`; upstream's version never carries over | `package.json`, `package-lock.json`, `tauri.conf.json`, `Cargo.toml`, `Cargo.lock` (`npm run release` stamps them all) |
 | Changelog | [`CHANGELOG.md`](CHANGELOG.md), each release with its upstream base; What's New in `src/lib/forkChangelog.ts` | upstream's `docs/CHANGELOG.md` and `src/lib/changelogData.ts` stay as upstream keeps them |
