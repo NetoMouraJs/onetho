@@ -28,7 +28,8 @@ const PKG = 'package.json'
 const TAURI = 'src-tauri/tauri.conf.json'
 const CARGO = 'src-tauri/Cargo.toml'
 const LOCK = 'src-tauri/Cargo.lock'
-const WHATS_NEW = 'src/lib/changelogData.ts'
+// The fork's own list; upstream's (src/lib/changelogData.ts) never holds the fork's versions.
+const WHATS_NEW = 'src/lib/forkChangelog.ts'
 
 function sh(cmd) {
   return execSync(cmd, { stdio: 'pipe', encoding: 'utf8' }).trim()
@@ -72,8 +73,8 @@ const listed = [...whatsNew.matchAll(/version:\s*'(\d+\.\d+\.\d+)'/g)].map((m) =
 if (!listed.includes(next)) {
   fail(
     `What's New has no notes for ${next} (newest listed: ${listed[0] ?? 'none'}).\n` +
-      `  Add a { version: '${next}', ... } entry at the top of ${WHATS_NEW}, with its\n` +
-      `  whatsNew.v${next.replaceAll('.', '')}.note* keys in every locale under src/lib/i18n/messages/,\n` +
+      `  Add a { version: '${next}', upstream, ... } entry at the top of ${WHATS_NEW}, with its\n` +
+      `  whatsNew.fork.v${next.replaceAll('.', '')}.note* keys in every locale under src/lib/i18n/messages/,\n` +
       '  commit it, then run the release again.',
   )
 }

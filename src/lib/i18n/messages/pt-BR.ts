@@ -1550,6 +1550,13 @@ export const ptBR: Record<MessageKey, string> = {
   'whatsNew.v130.note7': 'O modo YOLO virou um controle de um clique no modal de adicionar IA.',
   'whatsNew.v130.note8':
     'Controle experimental de opacidade da janela, para enxergar o desktop através do Alethe.',
+  'whatsNew.forkBase': 'Baseado no {upstream} v{version}, até o commit {commit} do upstream.',
+  'whatsNew.upstreamHeading': 'Versões do {upstream}',
+  'whatsNew.fork.v010.note1':
+    'Primeira versão do Onetho, com nome, identificador, numeração de versões e canal de atualização próprios.',
+  'whatsNew.fork.v010.note2': 'Uma sessão do Claude que você nomeou agora mostra esse nome.',
+  'whatsNew.fork.v010.note3':
+    'A alça de redimensionar da barra lateral aparece sempre que o cursor de redimensionar aparece.',
   'rightSidebar.backToTodo': 'Voltar para Todo',
   'rightSidebar.markdownError': 'Não foi possível carregar o Markdown',
   'rightSidebar.navigation': 'Navegação da sidebar direita',

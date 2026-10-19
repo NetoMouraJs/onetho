@@ -1523,6 +1523,12 @@ export const en = {
     'Projects sidebar reorganized: pinned active project card, colored monograms, and a live activity indicator.',
   'whatsNew.v130.note7': 'YOLO mode became a one-click control in the Add AI modal.',
   'whatsNew.v130.note8': 'Experimental window opacity control, to see the desktop through Alethe.',
+  'whatsNew.forkBase': 'Built on {upstream} v{version}, up to upstream commit {commit}.',
+  'whatsNew.upstreamHeading': '{upstream} releases',
+  'whatsNew.fork.v010.note1':
+    'First Onetho release, with its own name, identifier, version line and update channel.',
+  'whatsNew.fork.v010.note2': 'A Claude session you named now shows that name.',
+  'whatsNew.fork.v010.note3': 'The sidebar resize handle shows whenever the resize cursor does.',
   'rightSidebar.backToTodo': 'Back to Todo',
   'rightSidebar.markdownError': 'Could not load Markdown',
   'rightSidebar.navigation': 'Right sidebar navigation',

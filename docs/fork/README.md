@@ -16,6 +16,8 @@ its own file here and a line in this index.
 | Terminal command | `onetho` | same |
 | Identifier | `com.netomoura.onetho` (dev: `com.netomoura.onetho.dev`) | same + `src-tauri/tauri.conf.json`, `tauri.dev.json` |
 | Repository | `NetoMouraJs/alethe-agents` | `src/lib/brand.ts`, `plugin_catalog.rs`, `tauri.conf.json` (updater) |
+| Version | Own line, from `0.1.0`; upstream's version never carries over | `package.json`, `package-lock.json`, `tauri.conf.json`, `Cargo.toml`, `Cargo.lock` (`npm run release` stamps them all) |
+| Changelog | [`CHANGELOG.md`](CHANGELOG.md), each release with its upstream base; What's New in `src/lib/forkChangelog.ts` | upstream's `docs/CHANGELOG.md` and `src/lib/changelogData.ts` stay as upstream keeps them |
 
 Translated texts are **not** edited: `translate()` (`src/lib/i18n/index.ts`) swaps "Alethe" for
 "Onetho" at runtime, and the remote UI does the same in `src-tauri/remote/app.js`.
@@ -40,3 +42,8 @@ git config rerere.enabled true              # remembers resolutions of repeated 
 git fetch upstream
 git merge upstream/main                     # merge, not rebase (public fork)
 ```
+
+An upstream release changes the version in the five version files: on a conflict there, keep the
+fork's version. Its changelog and What's New entries come in untouched; the fork's live in
+`CHANGELOG.md` here and in `src/lib/forkChangelog.ts`. A fork release records the upstream base it
+ships: `git describe --tags upstream/main` gives the release and the commit.

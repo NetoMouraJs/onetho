@@ -4,10 +4,8 @@ import packageJson from '../../package.json'
 import { CHANGELOG_RELEASES, CURRENT_VERSION, formatReleaseDate } from './changelogData'
 
 describe("What's New releases", () => {
-  it('cover the version being shipped', () => {
-    // The list is kept by hand; this fails a build whose version has no notes (#69, #213).
-    expect(CHANGELOG_RELEASES.map((release) => release.version)).toContain(packageJson.version)
-  })
+  // The fork ships its own version line, so the shipped version is checked against its own list
+  // in forkChangelog.test.ts.
 
   it('take the panel version from the build, not from the list', () => {
     expect(CURRENT_VERSION).toBe(packageJson.version)

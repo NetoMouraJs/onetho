@@ -1,6 +1,14 @@
 import { Newspaper } from 'lucide-react'
+import type { ReactNode } from 'react'
 
-import { CHANGELOG_RELEASES, CURRENT_VERSION, formatReleaseDate } from '../../lib/changelogData'
+import { UPSTREAM_NAME } from '../../lib/brand'
+import {
+  CHANGELOG_RELEASES,
+  type ChangelogRelease,
+  CURRENT_VERSION,
+  formatReleaseDate,
+} from '../../lib/changelogData'
+import { FORK_RELEASES } from '../../lib/forkChangelog'
 import { intlLocale, useT } from '../../lib/i18n'
 import { useProjectsStore } from '../../stores/projectsStore'
 import { useUiStore } from '../../stores/uiStore'
@@ -19,6 +27,7 @@ export function WhatsNewModal() {
 
   const version = updateInfo?.version ?? updateInfo?.currentVersion ?? CURRENT_VERSION
   const hasUpdate = Boolean(updateInfo && updateInfo.version !== updateInfo.currentVersion)
+  const dateLocale = intlLocale(locale)
 
   return (
     <Modal
@@ -62,23 +71,54 @@ export function WhatsNewModal() {
         <div className={styles.notes}>{updateInfo.notes}</div>
       ) : (
         <div className={styles.releases}>
-          {CHANGELOG_RELEASES.map((release) => (
-            <section key={release.version} className={styles.release}>
-              <h3 className={styles.releaseHeading}>
-                {t('whatsNew.releaseHeading', {
-                  version: release.version,
-                  date: formatReleaseDate(release.date, intlLocale(locale)),
+          {FORK_RELEASES.map((release) => (
+            <ReleaseNotes key={release.version} release={release} dateLocale={dateLocale}>
+              {/* The upstream name goes in as a param: the brand swap only rewrites templates. */}
+              <p className={styles.upstreamBase}>
+                {t('whatsNew.forkBase', {
+                  upstream: UPSTREAM_NAME,
+                  version: release.upstream.version,
+                  commit: release.upstream.commit,
                 })}
-              </h3>
-              <ul className={styles.list}>
-                {release.noteKeys.map((key) => (
-                  <li key={key}>{t(key)}</li>
-                ))}
-              </ul>
-            </section>
+              </p>
+            </ReleaseNotes>
+          ))}
+          <h2 className={styles.sourceHeading}>
+            {t('whatsNew.upstreamHeading', { upstream: UPSTREAM_NAME })}
+          </h2>
+          {CHANGELOG_RELEASES.map((release) => (
+            <ReleaseNotes key={release.version} release={release} dateLocale={dateLocale} />
           ))}
         </div>
       )}
     </Modal>
+  )
+}
+
+function ReleaseNotes({
+  release,
+  dateLocale,
+  children,
+}: {
+  release: ChangelogRelease
+  dateLocale: string
+  children?: ReactNode
+}) {
+  const t = useT()
+  return (
+    <section className={styles.release}>
+      <h3 className={styles.releaseHeading}>
+        {t('whatsNew.releaseHeading', {
+          version: release.version,
+          date: formatReleaseDate(release.date, dateLocale),
+        })}
+      </h3>
+      {children}
+      <ul className={styles.list}>
+        {release.noteKeys.map((key) => (
+          <li key={key}>{t(key)}</li>
+        ))}
+      </ul>
+    </section>
   )
 }
