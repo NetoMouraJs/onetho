@@ -45,6 +45,11 @@ async function liveAiMemoryPrefs(): Promise<{ enabled: boolean; port: number }> 
   return { enabled: prefs.enabledFeatures.aiMemory, port: AI_MEMORY_DEFAULT_PORT }
 }
 
+async function liveClaudeUsageAccess(): Promise<boolean> {
+  const { useProjectsStore } = await import('../../stores/projectsStore')
+  return useProjectsStore.getState().preferences.usageAccess?.claude === true
+}
+
 /**
  * Path of the hooks settings.json generated for Claude Code (agent_events.rs).
  * `orchestrator: false` writes the session-tracking-only variant (SessionStart/UserPromptSubmit),
@@ -65,6 +70,8 @@ export async function agentHooksSettingsPath(
     orchestrator,
     aiMemoryEnabled: aiMemory?.enabled ?? false,
     aiMemoryPort: aiMemory?.port ?? null,
+    // With Claude usage reading on, the session's status line reports its rate limits to Onetho.
+    claudeUsage: await liveClaudeUsageAccess(),
   })
 }
 

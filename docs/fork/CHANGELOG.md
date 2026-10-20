@@ -15,6 +15,10 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
 - Codex usage updates on every Codex turn, read from the session files Codex already writes, so the
   card no longer waits for the next poll and the API is asked less often. The card says whether its
   reading came from a session or the API, and how old it is.
+- Claude usage updates after every response in a Claude terminal Onetho starts, read from the rate
+  limits Claude Code passes to its status line, so the card no longer depends on the usage API,
+  which often refuses requests. A status line of your own keeps working and shows the same output.
+  The card says whether its reading came from a session or the API, and how old it is.
 
 ### Fixed
 

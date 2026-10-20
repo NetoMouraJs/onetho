@@ -36,6 +36,8 @@ Mac synced through: `v1.7.0` (`80e44a3`)
 
 ## Unreleased
 
+- `pending` · `backend` · feat(usage): read Claude usage from its status line
+  - Files: `src-tauri/src/statusline_bridge.rs`, `src-tauri/src/agent_events.rs`, `src-tauri/src/claude_usage.rs`, `src/lib/claudeUsageCache.ts`
 - `pending` · `backend` · feat(usage): read Codex usage from its session files
   - Files: `src-tauri/src/codex_usage.rs`, `src-tauri/src/session_watcher.rs`, `src/lib/codexUsageCache.ts`
 - `pending` · `ui` · fix(usage): keep Claude usage requests apart and back off on Retry-After 0

@@ -306,8 +306,25 @@ function StatCell({ label, value, crit }: { label: string; value: string; crit?:
   )
 }
 
+/** Where the reading on screen came from and how old it is, kept current between readings. */
+function useSourceLabel(source: { kind: 'session' | 'api'; at: number } | null): string | null {
+  const t = useT()
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!source) return
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [source])
+  return source
+    ? t(source.kind === 'session' ? 'widget.fromSession' : 'widget.fromApi', {
+        when: formatRelativeTimestamp(source.at, Math.max(now, source.at)),
+      })
+    : null
+}
+
 function ClaudeCard({ usage }: { usage: ClaudeUsage | null }) {
   const t = useT()
+  const sourceLabel = useSourceLabel(useUiStore((s) => s.claudeUsageSource))
   const usageError = useUiStore((s) => s.claudeUsageError)
   const retryAt = useUiStore((s) => s.claudeUsageRetryAt)
   const loading = useUiStore((s) => s.claudeUsageLoading)
@@ -454,12 +471,12 @@ function ClaudeCard({ usage }: { usage: ClaudeUsage | null }) {
       </div>
       <CardFoot
         accent={accent}
-        left={[
-          '5h',
-          t('widget.week'),
-          'opus',
-          ...modelLimits.map((l) => l.model.toLowerCase()),
-        ].join(' · ')}
+        left={
+          sourceLabel ??
+          ['5h', t('widget.week'), 'opus', ...modelLimits.map((l) => l.model.toLowerCase())].join(
+            ' · ',
+          )
+        }
         right={
           // A reading kept from before a failed refresh says so instead of passing for live.
           usageError
@@ -482,20 +499,8 @@ function CodexCard({
 }) {
   const t = useT()
   const openModal = useUiStore((s) => s.openModal_)
-  const source = useUiStore((s) => s.codexUsageSource)
+  const sourceLabel = useSourceLabel(useUiStore((s) => s.codexUsageSource))
   const accent = 'var(--agent-codex)'
-  // Keeps the reading's age current between readings.
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (!source) return
-    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
-    return () => window.clearInterval(timer)
-  }, [source])
-  const sourceLabel = source
-    ? t(source.kind === 'session' ? 'widget.fromSession' : 'widget.fromApi', {
-        when: formatRelativeTimestamp(source.at, Math.max(now, source.at)),
-      })
-    : null
 
   const head = (
     <CardHead

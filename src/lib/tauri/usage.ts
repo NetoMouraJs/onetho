@@ -73,6 +73,26 @@ export type CodexUsage = {
   reset_credit_items?: CodexResetCredit[]
 }
 
+/** A Claude usage reading Claude Code passed to its status line, and when it arrived. */
+export type ClaudeSessionUsage = {
+  usage: ClaudeUsage
+  at_ms: number
+}
+
+/** The last usage a Claude Code status line reported this run; no network involved. */
+export async function getClaudeSessionUsage(): Promise<ClaudeSessionUsage | null> {
+  return withUsageAccess('claude', () =>
+    invoke<ClaudeSessionUsage | null>('get_claude_session_usage'),
+  )
+}
+
+/** Claude usage as the status line of a Claude terminal reports it, after every response. */
+export function onClaudeSessionUsage(
+  handler: (reading: ClaudeSessionUsage) => void,
+): Promise<UnlistenFn> {
+  return listen<ClaudeSessionUsage>('usage://claude', (event) => handler(event.payload))
+}
+
 /** A Codex usage reading taken from a session file, and when Codex recorded it. */
 export type CodexSessionUsage = {
   usage: CodexUsage

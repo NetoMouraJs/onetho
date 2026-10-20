@@ -5,9 +5,9 @@ import {
   finishDevTrace,
   startDevTrace,
 } from './devDiagnostics'
-import { type ClaudeUsage, getClaudeUsage } from './tauri'
+import { type ClaudeSessionUsage, type ClaudeUsage, getClaudeUsage } from './tauri'
 import { makeTtlCache } from './ttlCache'
-import { isUsageAccessOff } from './usageAccess'
+import { hasUsageAccess, isUsageAccessOff } from './usageAccess'
 
 const TTL_MS = 60_000
 const MIN_REQUEST_GAP_MS = 30_000
@@ -15,6 +15,8 @@ const COOLDOWN_BASE_MS = 60_000
 const COOLDOWN_MAX_MS = 15 * 60_000
 const HELD_BACK = 'held_back'
 const THROTTLE_KEY = 'onetho.claudeUsageThrottle.v1'
+/** How long a reading pushed by a Claude status line stands in for the API. */
+const SESSION_FRESH_MS = 5 * 60_000
 
 type Throttle = { lastRequestAt: number; retryAt: number; consecutiveRateLimits: number }
 
@@ -90,6 +92,7 @@ async function fetchClaudeUsage(): Promise<ClaudeUsage> {
     const usage = await getClaudeUsage()
     throttle = { ...throttle, retryAt: 0, consecutiveRateLimits: 0 }
     saveThrottle()
+    lastApi = { usage, at: Date.now() }
     return usage
   } catch (error) {
     const cooldown = cooldownAfter(error)
@@ -107,9 +110,64 @@ async function fetchClaudeUsage(): Promise<ClaudeUsage> {
 
 const cachedClaudeUsage = makeTtlCache(fetchClaudeUsage, TTL_MS)
 
-/** A forced read inside the minimum gap is served like a regular one, from the cache. */
-export function getCachedClaudeUsage(force = false): Promise<ClaudeUsage> {
-  return cachedClaudeUsage(force && Date.now() >= claudeUsageNextRequestAt())
+let session: ClaudeSessionUsage | null = null
+let lastApi: { usage: ClaudeUsage; at: number } | null = null
+
+/** The status line only reports the 5h and weekly windows: the rest comes from the last API read. */
+function withApiDetails(usage: ClaudeUsage): ClaudeUsage {
+  if (!lastApi) return usage
+  return {
+    ...usage,
+    seven_day_opus: lastApi.usage.seven_day_opus,
+    model_limits: lastApi.usage.model_limits,
+  }
+}
+
+function freshSession(): ClaudeSessionUsage | null {
+  return session && Date.now() - session.at_ms < SESSION_FRESH_MS ? session : null
+}
+
+function fromSession(reading: ClaudeSessionUsage): ClaudeUsage {
+  useUiStore.getState().setClaudeUsageSource({ kind: 'session', at: reading.at_ms })
+  return withApiDetails(reading.usage)
+}
+
+/**
+ * Claude usage from whichever source is newer: the reading the last Claude response passed to its
+ * status line, or the API. A recent status line reading spares the API call. A forced read asks
+ * the API, which also counts what other devices used, and falls back to the status line when the
+ * API refuses or holds it back; inside the minimum gap it is served like a regular one.
+ */
+export async function getCachedClaudeUsage(force = false): Promise<ClaudeUsage> {
+  const reading = freshSession()
+  if (!force && reading && reading.at_ms >= (lastApi?.at ?? 0)) return fromSession(reading)
+  try {
+    const usage = await cachedClaudeUsage(force && Date.now() >= claudeUsageNextRequestAt())
+    if (lastApi) useUiStore.getState().setClaudeUsageSource({ kind: 'api', at: lastApi.at })
+    return usage
+  } catch (error) {
+    const fallback = freshSession()
+    if (!fallback || isUsageAccessOff(error)) throw error
+    return fromSession(fallback)
+  }
+}
+
+/** Takes a reading a Claude status line pushed and shows it when it is the newest. */
+export function receiveClaudeSessionUsage(reading: ClaudeSessionUsage | null): void {
+  if (!reading || !hasUsageAccess('claude')) return
+  if (session && session.at_ms >= reading.at_ms) return
+  session = reading
+  // The API already answered with something more recent.
+  if (lastApi && lastApi.at > reading.at_ms) return
+  const { setClaudeUsage, setClaudeUsageError } = useUiStore.getState()
+  setClaudeUsage(fromSession(reading))
+  setClaudeUsageError(null)
+}
+
+/** Forgets both sources; for tests. */
+export function resetClaudeUsageSources(): void {
+  session = null
+  lastApi = null
 }
 
 let reads = 0

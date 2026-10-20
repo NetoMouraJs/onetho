@@ -74,6 +74,7 @@ mod router9;
 mod scheduler;
 mod secure_store;
 mod session_watcher;
+mod statusline_bridge;
 // The handoff it reports goes over D-Bus, which only the Linux build links (zbus).
 #[cfg(target_os = "linux")]
 mod single_instance_probe;
@@ -131,6 +132,10 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Claude Code runs this executable as its status line command; it must not start the app.
+    if let Some(code) = statusline_bridge::run_if_requested() {
+        std::process::exit(code);
+    }
     // bugs conhecidos no Wayland — escala fracionada quebrando layout,
 
     // ("Error 71") em alguns drivers de GPU — documentados oficialmente em
@@ -516,6 +521,7 @@ pub fn run() {
             claude_usage::get_claude_usage,
             codex_usage::get_codex_usage,
             codex_usage::get_codex_session_usage,
+            claude_usage::get_claude_session_usage,
             codex_usage::consume_codex_reset_credit,
             antigravity_usage::get_antigravity_usage,
             kimi_usage::get_kimi_usage,

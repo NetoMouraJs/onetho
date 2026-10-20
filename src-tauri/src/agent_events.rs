@@ -172,6 +172,7 @@ pub fn agent_hooks_settings_path(
     orchestrator: Option<bool>,
     ai_memory_enabled: Option<bool>,
     ai_memory_port: Option<u16>,
+    claude_usage: Option<bool>,
 ) -> Result<String, String> {
     let orchestrator = orchestrator.unwrap_or(true);
     let port = wait_for_listener_port()
@@ -197,6 +198,15 @@ pub fn agent_hooks_settings_path(
             if let Err(error) = crate::ai_memory_hooks::merge_hooks(hooks, &theirs) {
                 eprintln!("[ai_memory] hooks not merged: {error}");
             }
+        }
+    }
+    // With Claude usage reading on, the session's status line reports its rate limits here.
+    if claude_usage.unwrap_or(false) {
+        if let (Some(status_line), Some(object)) = (
+            crate::statusline_bridge::status_line_setting(port, init_token()),
+            settings.as_object_mut(),
+        ) {
+            object.insert("statusLine".to_string(), status_line);
         }
     }
     let body = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
@@ -652,6 +662,24 @@ pub fn start_listener(app: AppHandle) {
                         );
                     }
                 }
+                continue;
+            }
+
+            // Claude Code's status line JSON, relayed by `statusline_bridge`. Only its rate limits
+            // are kept, and the body is never logged: it carries the session's paths.
+            if url.starts_with("/usage/claude") {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0.0, |elapsed| elapsed.as_millis() as f64);
+                let reading = serde_json::from_str::<serde_json::Value>(&body)
+                    .ok()
+                    .and_then(|status| crate::claude_usage::parse_statusline(&status, now_ms));
+                if let Some(reading) = reading {
+                    if crate::claude_usage::offer_session_usage(&reading) {
+                        let _ = app.emit("usage://claude", &reading);
+                    }
+                }
+                let _ = request.respond(tiny_http::Response::empty(204));
                 continue;
             }
 

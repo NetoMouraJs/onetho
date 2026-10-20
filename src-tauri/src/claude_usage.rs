@@ -141,6 +141,72 @@ pub async fn get_claude_usage() -> Result<ClaudeUsage, String> {
     Ok(parse_usage(&body))
 }
 
+/// A Claude usage reading Claude Code passed to its status line, and when it arrived.
+#[derive(Debug, Serialize, Clone)]
+pub struct ClaudeSessionUsage {
+    pub usage: ClaudeUsage,
+    pub at_ms: f64,
+}
+
+static LATEST_SESSION_USAGE: std::sync::Mutex<Option<ClaudeSessionUsage>> =
+    std::sync::Mutex::new(None);
+
+/// `rate_limits` from the JSON Claude Code passes to the status line command: the 5h and weekly
+/// windows, `used_percentage` with `resets_at` in epoch seconds. The opus and per-model windows
+/// only come from the usage API.
+pub(crate) fn parse_statusline(body: &serde_json::Value, at_ms: f64) -> Option<ClaudeSessionUsage> {
+    let limits = body.get("rate_limits").filter(|v| v.is_object())?;
+    let window = |key: &str| -> Option<UsageWindow> {
+        let window = limits.get(key).filter(|v| v.is_object())?;
+        let resets_at = window.get("resets_at").and_then(|value| {
+            value
+                .as_f64()
+                .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
+                .map(|at| at.to_rfc3339())
+                .or_else(|| value.as_str().map(str::to_string))
+        });
+        Some(UsageWindow {
+            utilization: window.get("used_percentage").and_then(|v| v.as_f64())?,
+            resets_at: resets_at.unwrap_or_default(),
+        })
+    };
+    let empty = || UsageWindow {
+        utilization: 0.0,
+        resets_at: String::new(),
+    };
+    let (five_hour, seven_day) = (window("five_hour"), window("seven_day"));
+    if five_hour.is_none() && seven_day.is_none() {
+        return None;
+    }
+    Some(ClaudeSessionUsage {
+        usage: ClaudeUsage {
+            five_hour: five_hour.unwrap_or_else(empty),
+            seven_day: seven_day.unwrap_or_else(empty),
+            seven_day_opus: empty(),
+            model_limits: Vec::new(),
+        },
+        at_ms,
+    })
+}
+
+/// Keeps `reading` when it is newer than the one held, and says whether it was.
+pub(crate) fn offer_session_usage(reading: &ClaudeSessionUsage) -> bool {
+    let Ok(mut latest) = LATEST_SESSION_USAGE.lock() else {
+        return false;
+    };
+    if latest.as_ref().is_some_and(|held| held.at_ms >= reading.at_ms) {
+        return false;
+    }
+    *latest = Some(reading.clone());
+    true
+}
+
+/// The last usage a Claude Code status line reported this run, without touching the network.
+#[tauri::command]
+pub fn get_claude_session_usage() -> Option<ClaudeSessionUsage> {
+    LATEST_SESSION_USAGE.lock().ok().and_then(|held| held.clone())
+}
+
 fn parse_usage(body: &serde_json::Value) -> ClaudeUsage {
     let parse_window = |key: &str| -> UsageWindow {
         let default = UsageWindow {
@@ -217,6 +283,41 @@ fn parse_model_limits(body: &serde_json::Value) -> Vec<ModelLimit> {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+
+    #[test]
+    fn reads_the_rate_limits_claude_code_passes_to_the_status_line() {
+        let reading = super::parse_statusline(
+            &json!({
+                "model": { "display_name": "Opus" },
+                "rate_limits": {
+                    "five_hour": { "used_percentage": 100, "resets_at": 1_792_453_800 },
+                    "seven_day": { "used_percentage": 41.5, "resets_at": 1_792_922_635 }
+                }
+            }),
+            1_000.0,
+        )
+        .expect("reading");
+        assert_eq!(reading.at_ms, 1_000.0);
+        assert_eq!(reading.usage.five_hour.utilization, 100.0);
+        assert_eq!(reading.usage.five_hour.resets_at, "2026-10-19T23:50:00+00:00");
+        assert_eq!(reading.usage.seven_day.utilization, 41.5);
+        assert_eq!(reading.usage.seven_day_opus.resets_at, "");
+        assert!(reading.usage.model_limits.is_empty());
+    }
+
+    #[test]
+    fn status_line_without_rate_limits_has_no_reading() {
+        assert!(super::parse_statusline(&json!({ "model": {} }), 1.0).is_none());
+        assert!(super::parse_statusline(&json!({ "rate_limits": null }), 1.0).is_none());
+        assert!(super::parse_statusline(&json!({ "rate_limits": { "five_hour": {} } }), 1.0).is_none());
+        let weekly_only = super::parse_statusline(
+            &json!({ "rate_limits": { "seven_day": { "used_percentage": 3 } } }),
+            1.0,
+        )
+        .expect("reading");
+        assert_eq!(weekly_only.usage.five_hour.utilization, 0.0);
+        assert_eq!(weekly_only.usage.seven_day.resets_at, "");
+    }
 
     #[test]
     fn reads_model_scoped_weekly_limits() {

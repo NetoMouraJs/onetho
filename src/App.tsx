@@ -55,6 +55,7 @@ import { WorkspaceView } from './components/WorkspaceView'
 import { useAgentBrowserOffers } from './hooks/useAgentBrowserOffers'
 import { useAgentHookBridge } from './hooks/useAgentHookBridge'
 import { useCodexSessionBridge } from './hooks/useCodexSessionBridge'
+import { useClaudeUsagePush } from './hooks/useClaudeUsagePush'
 import { useCodexUsagePush } from './hooks/useCodexUsagePush'
 import { useAiMemoryAutoStart } from './hooks/useAiMemoryAutoStart'
 import { useAgentsSidebarAutoOpen } from './hooks/useAgentsSidebarAutoOpen'
@@ -217,6 +218,7 @@ export default function App() {
   useAgentBrowserOffers(playwrightEnabled)
   useAgentHookBridge()
   useCodexSessionBridge()
+  useClaudeUsagePush()
   useCodexUsagePush()
   useAgentsSidebarAutoOpen()
   useCliOpenRequests(hydrated)
