@@ -3,6 +3,9 @@
 The macOS app is a separate Swift codebase. This file lists every behavior change made here since
 the last point the Mac app matched, so each one can be ported, or skipped on purpose.
 
+> **Onetho fork:** the fork has no macOS app, so since `3b5f284` its commits carry `Mac-Port: n/a`
+> and get no entry here. The entries below are kept as history for a future Mac port.
+
 Mac synced through: `v1.7.0` (`80e44a3`)
 
 ## How it works

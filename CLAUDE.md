@@ -60,10 +60,11 @@ path relative to the repository.
    [`docs/CHANGELOG.md`](docs/CHANGELOG.md) in the same task, under the **`[Unreleased]`** section
    (top of the file), with a short, objective, user-facing description. Never skip this step — the
    changelog is the source for release notes.
-6. **Track the macOS port.** The Mac app is a separate Swift codebase. Every `feat`/`fix` that
-   changes behavior gets an entry in [`docs/MAC_PORT.md`](docs/MAC_PORT.md) under **Unreleased**,
-   in the same task, and its commit carries a `Mac-Port: required | skip (<reason>) | n/a` trailer.
-   Changes to synced or persisted data are kind `contract`. `npm run mac-port -- --check` must pass.
+6. **macOS port: not tracked in the fork.** Onetho has no macOS app, so its `feat`/`fix` commits
+   carry a plain `Mac-Port: n/a` trailer (the report only skips the exact value) and get no
+   [`docs/MAC_PORT.md`](docs/MAC_PORT.md) entry. The ledger stays as history for a future Mac
+   port. Pull requests to upstream still follow upstream's rule: an entry under **Unreleased** and a
+   `Mac-Port: required | skip (<reason>) | n/a` trailer.
 
 ## 4. Architecture at a glance
 
