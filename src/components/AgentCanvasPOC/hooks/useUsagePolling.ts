@@ -1,6 +1,6 @@
 import { type MutableRefObject, useCallback, useEffect, useRef, useState } from 'react'
 
-import { USAGE_FALLBACK_THRESHOLD, USAGE_POLL_MS } from '../../../lib/agentCanvasConfig'
+import { QUOTA_CHECK_INTERVAL_MS, USAGE_FALLBACK_THRESHOLD } from '../../../lib/agentCanvasConfig'
 import { formatReset } from '../../../lib/agentCanvasUtils'
 import { getCachedClaudeUsage } from '../../../lib/claudeUsageCache'
 import { getCachedCodexUsage } from '../../../lib/codexUsageCache'
@@ -79,7 +79,7 @@ export function useUsagePolling(
     }
 
     void check()
-    const timer = window.setInterval(check, USAGE_POLL_MS)
+    const timer = window.setInterval(check, QUOTA_CHECK_INTERVAL_MS)
     return () => {
       cancelled = true
       window.clearInterval(timer)

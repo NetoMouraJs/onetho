@@ -23,7 +23,9 @@ export const PTY_ENV = {
 
 export const USAGE_FALLBACK_THRESHOLD = 80
 
-export const USAGE_POLL_MS = 60_000
+// How often the orchestrator checks quota. It reads through the usage caches, so it does not set
+// how often an API is asked.
+export const QUOTA_CHECK_INTERVAL_MS = 60_000
 
 export const COST_POLL_MS = 4_000
 

@@ -4,9 +4,10 @@ import { type CodexSessionUsage, type CodexUsage, getCodexUsage } from './tauri'
 import { makeTtlCache } from './ttlCache'
 import { hasUsageAccess, isUsageAccessOff } from './usageAccess'
 
-const TTL_MS = 60_000
+// How long an API reading is reused by reads that are not forced: as long as the automatic sync.
+const API_READING_TTL_MS = 10 * 60_000
 /** How long a reading pushed by a Codex session stands in for the API. */
-const SESSION_FRESH_MS = 5 * 60_000
+const SESSION_READING_TTL_MS = 10 * 60_000
 
 let session: CodexSessionUsage | null = null
 let lastApi: { usage: CodexUsage; at: number } | null = null
@@ -25,7 +26,7 @@ const getCachedApiUsage = makeTtlCache(async () => {
   const usage = await getCodexUsage()
   lastApi = { usage, at: Date.now() }
   return usage
-}, TTL_MS)
+}, API_READING_TTL_MS)
 
 /**
  * Codex usage from whichever source is newer: the reading the last Codex turn recorded in its
@@ -37,7 +38,7 @@ export async function getCachedCodexUsage(force = false): Promise<CodexUsage> {
   if (
     !force &&
     session &&
-    Date.now() - session.at_ms < SESSION_FRESH_MS &&
+    Date.now() - session.at_ms < SESSION_READING_TTL_MS &&
     session.at_ms >= (lastApi?.at ?? 0)
   ) {
     setCodexUsageSource({ kind: 'session', at: session.at_ms })

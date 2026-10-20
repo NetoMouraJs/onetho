@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { USAGE_FALLBACK_THRESHOLD, USAGE_POLL_MS } from '../lib/agentCanvasConfig'
+import { QUOTA_CHECK_INTERVAL_MS, USAGE_FALLBACK_THRESHOLD } from '../lib/agentCanvasConfig'
 import { type AgentFitness, claudeFitness, codexFitness } from '../lib/agentFitness'
 import { loadClaudeUsage } from '../lib/claudeUsageCache'
 import { traceCachedCodexUsage } from '../lib/codexUsageCache'
@@ -61,7 +61,7 @@ export function useOrchestratorQuotaWarnings(): QuotaWarning[] {
     }
 
     void check()
-    const timer = window.setInterval(check, USAGE_POLL_MS)
+    const timer = window.setInterval(check, QUOTA_CHECK_INTERVAL_MS)
     return () => {
       cancelled = true
       window.clearInterval(timer)

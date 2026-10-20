@@ -62,7 +62,7 @@ describe('Codex usage sources', () => {
 
   it('goes back to the API once the session reading is old', async () => {
     receiveCodexSessionUsage({ usage: usage(36), at_ms: Date.now() })
-    vi.advanceTimersByTime(5 * 60_000)
+    vi.advanceTimersByTime(10 * 60_000)
     getCodexUsage.mockResolvedValueOnce(usage(41))
 
     expect((await getCachedCodexUsage()).primary.used_percent).toBe(41)

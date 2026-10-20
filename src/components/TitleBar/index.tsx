@@ -43,7 +43,10 @@ import { AntigravityIcon, ClaudeIcon, CodexIcon, KimiIcon } from '../icons/Agent
 import { ContextMenu, type MenuItem } from '../ProjectSidebar/ContextMenu'
 import styles from './TitleBar.module.css'
 
-const CLAUDE_POLL_INTERVAL_MS = 5 * 60_000
+// How often the title bar asks each usage API on its own. Claude and Codex push their usage from
+// the sessions in between, so their automatic sync only covers idle spells.
+const PUSHED_AUTO_SYNC_INTERVAL_MS = 10 * 60_000
+const AUTO_SYNC_INTERVAL_MS = 5 * 60_000
 const REMOTE_CONTROL_POLL_INTERVAL_MS = 2_000
 const APP_TITLE = import.meta.env.DEV ? `(DEV) ${BRAND_NAME}` : BRAND_NAME
 
@@ -354,7 +357,7 @@ export function TitleBar() {
     }
     const startupDelay = window.setTimeout(() => {
       void tick()
-      interval = window.setInterval(tick, CLAUDE_POLL_INTERVAL_MS)
+      interval = window.setInterval(tick, PUSHED_AUTO_SYNC_INTERVAL_MS)
     }, 1500)
     return () => {
       cancelled = true
@@ -386,7 +389,7 @@ export function TitleBar() {
     }
     const startupDelay = window.setTimeout(() => {
       void tick()
-      interval = window.setInterval(tick, CLAUDE_POLL_INTERVAL_MS)
+      interval = window.setInterval(tick, PUSHED_AUTO_SYNC_INTERVAL_MS)
     }, 2500)
     return () => {
       cancelled = true
@@ -414,7 +417,7 @@ export function TitleBar() {
     }
     const startupDelay = window.setTimeout(() => {
       void tick()
-      interval = window.setInterval(tick, CLAUDE_POLL_INTERVAL_MS)
+      interval = window.setInterval(tick, AUTO_SYNC_INTERVAL_MS)
     }, 3000)
     return () => {
       cancelled = true
@@ -436,7 +439,7 @@ export function TitleBar() {
       }
     }
     void tick()
-    const interval = window.setInterval(tick, 60_000)
+    const interval = window.setInterval(tick, AUTO_SYNC_INTERVAL_MS)
     return () => {
       cancelled = true
       window.clearInterval(interval)

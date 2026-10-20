@@ -280,7 +280,7 @@ describe('Claude usage from the status line', () => {
 
   it('goes back to the API once the pushed reading is old', async () => {
     receiveClaudeSessionUsage({ usage: pushed(61), at_ms: Date.now() })
-    vi.advanceTimersByTime(5 * 60_000)
+    vi.advanceTimersByTime(10 * 60_000)
     getClaudeUsage.mockResolvedValueOnce(reading)
 
     expect((await getCachedClaudeUsage()).five_hour.utilization).toBe(34)

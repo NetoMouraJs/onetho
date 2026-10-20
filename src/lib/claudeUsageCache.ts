@@ -9,14 +9,16 @@ import { type ClaudeSessionUsage, type ClaudeUsage, getClaudeUsage } from './tau
 import { makeTtlCache } from './ttlCache'
 import { hasUsageAccess, isUsageAccessOff } from './usageAccess'
 
-const TTL_MS = 60_000
-const MIN_REQUEST_GAP_MS = 30_000
+// How long an API reading is reused by reads that are not forced: as long as the automatic sync.
+const API_READING_TTL_MS = 10 * 60_000
+// Every request to the API, automatic or manual, waits this long after the previous one.
+const MIN_SYNC_GAP_MS = 30_000
 const COOLDOWN_BASE_MS = 60_000
 const COOLDOWN_MAX_MS = 15 * 60_000
 const HELD_BACK = 'held_back'
 const THROTTLE_KEY = 'onetho.claudeUsageThrottle.v1'
 /** How long a reading pushed by a Claude status line stands in for the API. */
-const SESSION_FRESH_MS = 5 * 60_000
+const SESSION_READING_TTL_MS = 10 * 60_000
 
 type Throttle = { lastRequestAt: number; retryAt: number; consecutiveRateLimits: number }
 
@@ -57,7 +59,7 @@ export function claudeUsageRetryAt(): number | null {
 
 /** The earliest time a request may reach the API: after the cooldown and the minimum gap. */
 export function claudeUsageNextRequestAt(): number {
-  return Math.max(throttle.retryAt, throttle.lastRequestAt + MIN_REQUEST_GAP_MS)
+  return Math.max(throttle.retryAt, throttle.lastRequestAt + MIN_SYNC_GAP_MS)
 }
 
 /** Clears the request throttle; for tests. */
@@ -80,7 +82,7 @@ function cooldownAfter(error: unknown): number | null {
 }
 
 /**
- * Every Claude usage request goes through here. Requests are at least MIN_REQUEST_GAP_MS apart,
+ * Every Claude usage request goes through here. Requests are at least MIN_SYNC_GAP_MS apart,
  * and after a 429 none goes out until the cooldown ends (Retry-After, or a doubling backoff
  * without one): another request only keeps the limit hit.
  */
@@ -108,7 +110,7 @@ async function fetchClaudeUsage(): Promise<ClaudeUsage> {
   }
 }
 
-const cachedClaudeUsage = makeTtlCache(fetchClaudeUsage, TTL_MS)
+const cachedClaudeUsage = makeTtlCache(fetchClaudeUsage, API_READING_TTL_MS)
 
 let session: ClaudeSessionUsage | null = null
 let lastApi: { usage: ClaudeUsage; at: number } | null = null
@@ -124,7 +126,7 @@ function withApiDetails(usage: ClaudeUsage): ClaudeUsage {
 }
 
 function freshSession(): ClaudeSessionUsage | null {
-  return session && Date.now() - session.at_ms < SESSION_FRESH_MS ? session : null
+  return session && Date.now() - session.at_ms < SESSION_READING_TTL_MS ? session : null
 }
 
 function fromSession(reading: ClaudeSessionUsage): ClaudeUsage {

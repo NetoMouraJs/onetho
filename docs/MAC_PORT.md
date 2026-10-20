@@ -36,6 +36,8 @@ Mac synced through: `v1.7.0` (`80e44a3`)
 
 ## Unreleased
 
+- `pending` · `ui` · perf(usage): poll Claude and Codex usage every 10 minutes, the rest every 5
+  - Files: `src/components/TitleBar/index.tsx`, `src/lib/claudeUsageCache.ts`, `src/lib/codexUsageCache.ts`
 - `pending` · `backend` · feat(usage): read Claude usage from its status line
   - Files: `src-tauri/src/statusline_bridge.rs`, `src-tauri/src/agent_events.rs`, `src-tauri/src/claude_usage.rs`, `src/lib/claudeUsageCache.ts`
 - `pending` · `backend` · feat(usage): read Codex usage from its session files

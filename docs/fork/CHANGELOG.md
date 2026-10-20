@@ -20,6 +20,12 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
   which often refuses requests. A status line of your own keeps working and shows the same output.
   The card says whether its reading came from a session or the API, and how old it is.
 
+### Changed
+
+- Claude and Codex usage is asked from their APIs every 10 minutes instead of every 5, since the
+  sessions push every change in between. Kimi is polled every 5 minutes instead of every minute,
+  like Antigravity. A manual refresh still asks right away.
+
 ### Fixed
 
 - Onetho no longer keeps hitting the Claude usage service while it rate limits. The orchestrator
