@@ -28,6 +28,7 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
 
 ### Fixed
 
+- Pane headers now follow the session title shown in the sidebar and hide leaked system reminder text.
 - Onetho no longer keeps hitting the Claude usage service while it rate limits. The orchestrator
   reads usage through the shared cache instead of once a minute per pane, requests are at least
   30 seconds apart, and after a refusal no request goes out until a backoff that grows from one

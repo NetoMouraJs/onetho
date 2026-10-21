@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 
+import { useSidebarChatTitle } from '../../hooks/useSidebarChatTitle'
 import { relaunchAgentPty } from '../../lib/agentRelaunch'
 import { graphifyRepoOf } from '../../lib/claudeMcpConfigs'
 import { buildGhosttyCommand } from '../../lib/ghosttyCommand'
@@ -29,9 +30,9 @@ import {
   savedConversationIdFor,
   saveSession,
 } from '../../lib/sessionResume'
+import { isInjectedTitle, sanitizeSessionTitle } from '../../lib/sessionTitle'
 import {
   completeAgentHandoff,
-  getClaudeSessionTitle,
   getCodexSessionTitle,
   getPtyCwd,
   openInVscode,
@@ -52,6 +53,8 @@ import { SubTabsLane } from '../SubTabsLane'
 import { XTermView } from '../XTermView'
 import styles from './TerminalPane.module.css'
 import { WslBadge } from './WslBadge'
+
+const CODEX_TITLE_POLL_INTERVAL_MS = 60_000
 
 export type TerminalPaneProps = {
   projectId: string
@@ -358,41 +361,54 @@ export const TerminalPane = memo(function TerminalPane({
     activeTab?.type === 'claude' || activeTab?.type === 'codex' ? activeTab.type : null
   const sessionTitleId = sessionTitleAgentType ? activeTab?.sessionId : undefined
 
-  const [sessionTitle, setSessionTitle] = useState<string | null>(null)
+  const titleTab = useMemo(() => (activeTab ? { ...activeTab, cwd } : undefined), [activeTab, cwd])
+  const claudeSessionTitle = useSidebarChatTitle(titleTab)
+  const [sessionTitle, setSessionTitle] = useState<{
+    sessionId: string
+    title: string | null
+  } | null>(null)
   useEffect(() => {
-    setSessionTitle(null)
-    if (!sessionTitleAgentType || !sessionTitleId) return
-    if (sessionTitleAgentType === 'claude' && !cwd) return
-    const agentType = sessionTitleAgentType
+    if (sessionTitleAgentType !== 'codex' || !sessionTitleId) return
+
     const sessionId = sessionTitleId
     let cancelled = false
-    const fetchTitle = () => {
-      const request =
-        agentType === 'claude'
-          ? getClaudeSessionTitle(cwd, sessionId)
-          : getCodexSessionTitle(sessionId)
-      request
-        .then((title) => {
-          if (cancelled || !title) return
-          setSessionTitle(title)
-          // Promise callbacks run after the interval below is assigned.
-          window.clearInterval(intervalId)
-        })
-        .catch(() => {})
+    const fetchTitle = async () => {
+      try {
+        const title = sanitizeSessionTitle(await getCodexSessionTitle(sessionId))
+        if (cancelled) return
+        setSessionTitle((current) =>
+          current?.sessionId === sessionId && current.title === title
+            ? current
+            : { sessionId, title },
+        )
+      } catch {
+        // Keep the last title; the next poll retries.
+      }
     }
-    fetchTitle()
-    const intervalId = window.setInterval(fetchTitle, 6000)
+    void fetchTitle()
+    const intervalId = window.setInterval(() => void fetchTitle(), CODEX_TITLE_POLL_INTERVAL_MS)
     return () => {
       cancelled = true
       window.clearInterval(intervalId)
     }
-  }, [sessionTitleAgentType, sessionTitleId, cwd])
+  }, [sessionTitleAgentType, sessionTitleId])
 
-  const hasCustomTabName = Boolean(activeTab && activeTab.name !== activeTab.type)
+  const codexSessionTitle =
+    sessionTitle && sessionTitle.sessionId === sessionTitleId ? sessionTitle.title : null
+  const sanitizedSessionTitle = sanitizeSessionTitle(
+    sessionTitleAgentType === 'claude'
+      ? claudeSessionTitle
+      : sessionTitleAgentType === 'codex'
+        ? codexSessionTitle
+        : null,
+  )
+
+  const customTabName = activeTab ? sanitizeSessionTitle(activeTab.name) : null
   const displayName = activeTab
-    ? hasCustomTabName
-      ? activeTab.name
-      : (sessionTitle ?? activeTab.name)
+    ? customTabName && customTabName !== activeTab.type
+      ? customTabName
+      : (sanitizedSessionTitle ??
+        (isInjectedTitle(activeTab.name) ? activeTab.type : activeTab.name))
     : terminal.name
 
   const setSubTabName = useProjectsStore((s) => s.setSubTabName)
@@ -417,7 +433,9 @@ export const TerminalPane = memo(function TerminalPane({
   }
 
   const commitRename = () => {
-    if (activeTab) setSubTabName(projectId, terminal.id, activeTab.id, renameDraft)
+    if (activeTab && renameDraft.trim() !== displayName.trim()) {
+      setSubTabName(projectId, terminal.id, activeTab.id, renameDraft)
+    }
     setIsRenaming(false)
   }
 
