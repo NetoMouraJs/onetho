@@ -1,5 +1,8 @@
 # Alethe — working guide (AI)
 
+> This is the **Onetho** fork. Its identity, fork rules, releases and changelog are in
+> [`docs/fork/`](docs/fork/README.md).
+
 > Identical in content to [`AGENTS.md`](AGENTS.md) in this directory. Keep both in sync.
 > Contributing from outside? Start with [`CONTRIBUTING.md`](CONTRIBUTING.md) — setup, project
 > layout, house rules, and PR convention.
