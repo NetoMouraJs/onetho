@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 
-import { useSidebarChatTitle } from '../../hooks/useSidebarChatTitle'
+import { useSessionTitle } from '../../hooks/useSidebarChatTitle'
 import { relaunchAgentPty } from '../../lib/agentRelaunch'
 import { graphifyRepoOf } from '../../lib/claudeMcpConfigs'
 import { buildGhosttyCommand } from '../../lib/ghosttyCommand'
@@ -30,13 +30,8 @@ import {
   savedConversationIdFor,
   saveSession,
 } from '../../lib/sessionResume'
-import { isInjectedTitle, sanitizeSessionTitle } from '../../lib/sessionTitle'
-import {
-  completeAgentHandoff,
-  getCodexSessionTitle,
-  getPtyCwd,
-  openInVscode,
-} from '../../lib/tauri'
+import { paneDisplayName } from '../../lib/sessionTitle'
+import { completeAgentHandoff, getPtyCwd, openInVscode } from '../../lib/tauri'
 import {
   type AgentType,
   isShellAgentType,
@@ -53,8 +48,6 @@ import { SubTabsLane } from '../SubTabsLane'
 import { XTermView } from '../XTermView'
 import styles from './TerminalPane.module.css'
 import { WslBadge } from './WslBadge'
-
-const CODEX_TITLE_POLL_INTERVAL_MS = 60_000
 
 export type TerminalPaneProps = {
   projectId: string
@@ -357,59 +350,8 @@ export const TerminalPane = memo(function TerminalPane({
 
   const cwd = activeTab?.cwd?.trim() || terminal.cwd?.trim() || ''
 
-  const sessionTitleAgentType =
-    activeTab?.type === 'claude' || activeTab?.type === 'codex' ? activeTab.type : null
-  const sessionTitleId = sessionTitleAgentType ? activeTab?.sessionId : undefined
-
-  const titleTab = useMemo(() => (activeTab ? { ...activeTab, cwd } : undefined), [activeTab, cwd])
-  const claudeSessionTitle = useSidebarChatTitle(titleTab)
-  const [sessionTitle, setSessionTitle] = useState<{
-    sessionId: string
-    title: string | null
-  } | null>(null)
-  useEffect(() => {
-    if (sessionTitleAgentType !== 'codex' || !sessionTitleId) return
-
-    const sessionId = sessionTitleId
-    let cancelled = false
-    const fetchTitle = async () => {
-      try {
-        const title = sanitizeSessionTitle(await getCodexSessionTitle(sessionId))
-        if (cancelled) return
-        setSessionTitle((current) =>
-          current?.sessionId === sessionId && current.title === title
-            ? current
-            : { sessionId, title },
-        )
-      } catch {
-        // Keep the last title; the next poll retries.
-      }
-    }
-    void fetchTitle()
-    const intervalId = window.setInterval(() => void fetchTitle(), CODEX_TITLE_POLL_INTERVAL_MS)
-    return () => {
-      cancelled = true
-      window.clearInterval(intervalId)
-    }
-  }, [sessionTitleAgentType, sessionTitleId])
-
-  const codexSessionTitle =
-    sessionTitle && sessionTitle.sessionId === sessionTitleId ? sessionTitle.title : null
-  const sanitizedSessionTitle = sanitizeSessionTitle(
-    sessionTitleAgentType === 'claude'
-      ? claudeSessionTitle
-      : sessionTitleAgentType === 'codex'
-        ? codexSessionTitle
-        : null,
-  )
-
-  const customTabName = activeTab ? sanitizeSessionTitle(activeTab.name) : null
-  const displayName = activeTab
-    ? customTabName && customTabName !== activeTab.type
-      ? customTabName
-      : (sanitizedSessionTitle ??
-        (isInjectedTitle(activeTab.name) ? activeTab.type : activeTab.name))
-    : terminal.name
+  const sessionTitle = useSessionTitle(activeTab, cwd)
+  const displayName = paneDisplayName(terminal, activeTab, sessionTitle)
 
   const setSubTabName = useProjectsStore((s) => s.setSubTabName)
   const [isRenaming, setIsRenaming] = useState(false)

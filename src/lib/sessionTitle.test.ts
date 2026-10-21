@@ -1,7 +1,71 @@
 import { describe, expect, it } from 'vitest'
 
-import { isInjectedTitle, sanitizeLeakedTabNames, sanitizeSessionTitle } from './sessionTitle'
-import type { ProjectsFile } from './types'
+import {
+  isInjectedTitle,
+  paneDisplayName,
+  sanitizeLeakedTabNames,
+  sanitizeSessionTitle,
+} from './sessionTitle'
+import type { ProjectsFile, SubTab, Terminal } from './types'
+
+const terminal = (overrides: Partial<Terminal> = {}) =>
+  ({ name: 'Pane', customName: false, ...overrides }) as Terminal
+const tab = (overrides: Partial<SubTab> = {}) =>
+  ({ name: 'claude', type: 'claude', ...overrides }) as SubTab
+
+describe('paneDisplayName', () => {
+  it('uses the user named session title before every manual name', () => {
+    expect(
+      paneDisplayName(terminal({ customName: true }), tab({ name: 'Tab name' }), {
+        title: 'Session name',
+        userNamed: true,
+      }),
+    ).toBe('Session name')
+  })
+
+  it('uses the pane name before a manual tab name and automatic title', () => {
+    expect(
+      paneDisplayName(terminal({ name: '  Pane  name ', customName: true }), tab({ name: 'Tab' }), {
+        title: 'Automatic',
+        userNamed: false,
+      }),
+    ).toBe('Pane  name')
+  })
+
+  it('uses the manual tab name before an automatic title and preserves internal spaces', () => {
+    expect(
+      paneDisplayName(terminal(), tab({ name: '  My  tab  ' }), {
+        title: 'Automatic',
+        userNamed: false,
+      }),
+    ).toBe('My  tab')
+  })
+
+  it('uses an automatic title before the default tab name', () => {
+    expect(paneDisplayName(terminal(), tab(), { title: 'Automatic', userNamed: false })).toBe(
+      'Automatic',
+    )
+  })
+
+  it('uses the pane name when there is no tab', () => {
+    expect(paneDisplayName(terminal({ name: 'Pane only' }), undefined, null)).toBe('Pane only')
+  })
+
+  it('uses the agent type for an injected tab name', () => {
+    expect(
+      paneDisplayName(terminal(), tab({ name: '<system-reminder>secret</system-reminder>' }), null),
+    ).toBe('claude')
+  })
+
+  it('never returns an injected session title', () => {
+    expect(
+      paneDisplayName(terminal(), tab(), {
+        title: '<system-reminder>secret</system-reminder>',
+        userNamed: true,
+      }),
+    ).toBe('claude')
+  })
+})
 
 describe('sanitizeSessionTitle', () => {
   it('returns null for an injected system reminder title', () => {
@@ -10,6 +74,10 @@ describe('sanitizeSessionTitle', () => {
 
     expect(isInjectedTitle(title)).toBe(true)
     expect(sanitizeSessionTitle(title)).toBeNull()
+  })
+
+  it('returns null when the reminder appears after other text', () => {
+    expect(sanitizeSessionTitle('prefix <system-reminder>secret</system-reminder>')).toBeNull()
   })
 
   it('collapses whitespace and trims the title', () => {

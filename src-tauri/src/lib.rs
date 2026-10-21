@@ -509,6 +509,7 @@ pub fn run() {
             claude_sessions::claude_session_exists,
             claude_sessions::list_claude_sessions,
             claude_sessions::get_claude_session_title,
+            claude_sessions::get_claude_session_title_info,
             claude_sessions::get_claude_activity,
             claude_sessions::get_multi_agent_activity,
             codex_sessions::snapshot_codex_sessions,

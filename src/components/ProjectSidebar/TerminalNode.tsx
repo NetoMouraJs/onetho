@@ -1,9 +1,9 @@
 import { useDraggable } from '@dnd-kit/core'
 import { FileText, MoreHorizontal } from 'lucide-react'
 
-import { useSidebarChatTitle } from '../../hooks/useSidebarChatTitle'
+import { useSessionTitle } from '../../hooks/useSidebarChatTitle'
 import { useT } from '../../lib/i18n'
-import { sidebarTerminalDisplayName } from '../../lib/terminalFactory'
+import { paneDisplayName } from '../../lib/sessionTitle'
 import { type AgentType, type Project, type Terminal } from '../../lib/types'
 import { useProjectsStore } from '../../stores/projectsStore'
 import { useTerminalsStore } from '../../stores/terminalsStore'
@@ -40,8 +40,8 @@ export function TerminalNode({
   })
 
   const activeTab = terminal.tabs.find((tab) => tab.id === terminal.activeTabId) ?? terminal.tabs[0]
-  const chatTitle = useSidebarChatTitle(activeTab)
-  const displayName = sidebarTerminalDisplayName(terminal, chatTitle)
+  const sessionTitle = useSessionTitle(activeTab, terminal.cwd)
+  const displayName = paneDisplayName(terminal, activeTab, sessionTitle)
   const uniqueTypes = Array.from(new Set(terminal.tabs.map((tab) => tab.type))) as AgentType[]
   const orderedTypes =
     activeTab && uniqueTypes.length > 1

@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 
+import type { SessionTitle } from '../types'
+
 export type AntigravitySessionSnapshot = {
   id: string
   preview: string
@@ -106,6 +108,13 @@ export async function getClaudeSessionTitle(
   sessionId: string,
 ): Promise<string | null> {
   return invoke<string | null>('get_claude_session_title', { cwd, sessionId })
+}
+
+export async function getClaudeSessionTitleInfo(
+  cwd: string,
+  sessionId: string,
+): Promise<SessionTitle | null> {
+  return invoke<SessionTitle | null>('get_claude_session_title_info', { cwd, sessionId })
 }
 
 // --- OpenCode Sessions ---

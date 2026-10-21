@@ -1,7 +1,7 @@
-import type { ProjectsFile } from './types'
+import type { ProjectsFile, SessionTitle, SubTab, Terminal } from './types'
 
 export function isInjectedTitle(value: string | null | undefined): boolean {
-  return value?.trim().startsWith('<system-reminder>') ?? false
+  return value?.includes('<system-reminder>') ?? false
 }
 
 export function sanitizeSessionTitle(value: string | null | undefined): string | null {
@@ -31,4 +31,28 @@ export function sanitizeLeakedTabNames(file: ProjectsFile): ProjectsFile {
   })
 
   return fileChanged ? { ...file, projects } : file
+}
+
+function manualName(value: string | null | undefined): string | null {
+  if (!value || isInjectedTitle(value)) return null
+  const name = value.trim()
+  return name || null
+}
+
+export function paneDisplayName(
+  terminal: Terminal,
+  tab: SubTab | undefined,
+  sessionTitle: SessionTitle | null,
+): string {
+  const terminalName = manualName(terminal.name) ?? ''
+  const fallbackName = tab ? (isInjectedTitle(tab.name) ? tab.type : tab.name) : terminalName
+  if (sessionTitle?.userNamed) return sanitizeSessionTitle(sessionTitle.title) ?? fallbackName
+  if (terminal.customName) return terminalName
+
+  const tabName = manualName(tab?.name)
+  if (tab && tabName && tabName !== tab.type) return tabName
+
+  const automaticTitle = sanitizeSessionTitle(sessionTitle?.title)
+  if (automaticTitle) return automaticTitle
+  return manualName(fallbackName) ?? tab?.type ?? terminalName
 }
