@@ -356,6 +356,7 @@ export const TerminalPane = memo(function TerminalPane({
   const setSubTabName = useProjectsStore((s) => s.setSubTabName)
   const [isRenaming, setIsRenaming] = useState(false)
   const [renameDraft, setRenameDraft] = useState('')
+  const [renameStart, setRenameStart] = useState('')
   const renameInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
@@ -371,11 +372,13 @@ export const TerminalPane = memo(function TerminalPane({
   const startRename = () => {
     if (!activeTab) return
     setRenameDraft(displayName || '')
+    setRenameStart(displayName || '')
     setIsRenaming(true)
   }
 
   const commitRename = () => {
-    if (activeTab && renameDraft.trim() !== displayName.trim()) {
+    // Compare with the text the input opened with: the title can change while it is open.
+    if (activeTab && renameDraft.trim() !== renameStart.trim()) {
       setSubTabName(projectId, terminal.id, activeTab.id, renameDraft)
     }
     setIsRenaming(false)

@@ -56,6 +56,19 @@ describe('useSessionTitle', () => {
     expect(sidebar.result.current).toEqual({ title: 'BS-20059', userNamed: true })
   })
 
+  it('keeps the same title object when a refresh reads the same title', async () => {
+    getClaudeSessionTitleInfo.mockResolvedValue({ title: 'Automatic', userNamed: false })
+    const tab = claudeTab()
+    const { result } = renderHook(() => useSessionTitle(tab))
+    await advance(0)
+    const first = result.current
+
+    await advance(300_000)
+
+    expect(getClaudeSessionTitleInfo).toHaveBeenCalledTimes(2)
+    expect(result.current).toBe(first)
+  })
+
   it('keeps looking for a title after the first retries come back empty', async () => {
     getClaudeSessionTitleInfo.mockResolvedValue(null)
     const tab = claudeTab()

@@ -53,10 +53,17 @@ async function loadTitle(type: 'claude' | 'codex', cwd: string, sessionId: strin
   )
     .then((value) => {
       const sanitizedTitle = sanitizeSessionTitle(value?.title)
-      const title =
-        sanitizedTitle && value ? { title: sanitizedTitle, userNamed: value.userNamed } : null
+      const previous = cached?.title ?? null
+      const unchanged = previous
+        ? previous.title === sanitizedTitle && previous.userNamed === value?.userNamed
+        : !sanitizedTitle
+      const title = unchanged
+        ? previous
+        : sanitizedTitle && value
+          ? { title: sanitizedTitle, userNamed: value.userNamed }
+          : null
       titlesByKey.set(key, { loadedAt: Date.now(), title })
-      listenersByKey.get(key)?.forEach((listener) => listener(title))
+      if (!unchanged) listenersByKey.get(key)?.forEach((listener) => listener(title))
       return title
     })
     .catch(() => {
