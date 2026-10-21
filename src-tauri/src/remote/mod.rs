@@ -119,8 +119,7 @@ pub(crate) fn stop_generation(hub: &RemoteHub, generation: u64) -> bool {
 }
 
 fn lifecycle_unavailable() -> String {
-    "Remote control cannot start because its lifecycle lock is unavailable. Restart Alethe and try again."
-        .to_string()
+    format!("Remote control cannot start because its lifecycle lock is unavailable. Restart {} and try again.", crate::brand::NAME)
 }
 
 /// Binds both listeners and only then marks the hub enabled and hands each
@@ -152,16 +151,20 @@ where
         .http
         .local_addr()
         .map_err(|_| {
-            "Remote control could not inspect its HTTP listener. Restart Alethe and try again."
-                .to_string()
+            format!(
+                "Remote control could not inspect its HTTP listener. Restart {} and try again.",
+                crate::brand::NAME
+            )
         })?
         .port();
     let ws_port = listeners
         .websocket
         .local_addr()
         .map_err(|_| {
-            "Remote control could not inspect its WebSocket listener. Restart Alethe and try again."
-                .to_string()
+            format!(
+                "Remote control could not inspect its WebSocket listener. Restart {} and try again.",
+                crate::brand::NAME
+            )
         })?
         .port();
     let generation = hub.activate(http_port, ws_port);
@@ -203,12 +206,16 @@ where
         )
     })?;
     http.set_nonblocking(true).map_err(|_| {
-        "Remote control could not configure its HTTP listener. Restart Alethe and try again."
-            .to_string()
+        format!(
+            "Remote control could not configure its HTTP listener. Restart {} and try again.",
+            crate::brand::NAME
+        )
     })?;
     websocket.set_nonblocking(true).map_err(|_| {
-        "Remote control could not configure its WebSocket listener. Restart Alethe and try again."
-            .to_string()
+        format!(
+            "Remote control could not configure its WebSocket listener. Restart {} and try again.",
+            crate::brand::NAME
+        )
     })?;
     Ok(BoundListeners { http, websocket })
 }
@@ -230,9 +237,17 @@ impl Drop for ConnectionGuard {
 
 #[cfg(test)]
 mod tests {
-    use super::bind_remote_listeners;
+    use super::{bind_remote_listeners, lifecycle_unavailable};
     use std::cell::Cell;
     use std::net::TcpListener;
+
+    #[test]
+    fn unavailable_lifecycle_names_the_fork_in_its_error() {
+        assert_eq!(
+            lifecycle_unavailable(),
+            "Remote control cannot start because its lifecycle lock is unavailable. Restart Onetho and try again."
+        );
+    }
 
     #[test]
     fn listener_startup_rolls_back_when_the_second_bind_fails() {
