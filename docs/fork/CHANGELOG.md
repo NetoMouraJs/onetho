@@ -28,6 +28,9 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
 
 ### Fixed
 
+- Native Claude and Codex subagents no longer stay Running on the orchestration board when their
+  stop callback is missed. The board checks the transcript each provider already writes and marks
+  the subagent done once it has finished, and Codex retries a hook delivery that fails.
 - Onetho no longer keeps hitting the Claude usage service while it rate limits. The orchestrator
   reads usage through the shared cache instead of once a minute per pane, requests are at least
   30 seconds apart, and after a refusal no request goes out until a backoff that grows from one
