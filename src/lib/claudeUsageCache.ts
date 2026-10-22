@@ -5,6 +5,7 @@ import {
   finishDevTrace,
   startDevTrace,
 } from './devDiagnostics'
+import { loadClaudePlan } from './claudePlan'
 import { type ClaudeSessionUsage, type ClaudeUsage, getClaudeUsage } from './tauri'
 import { makeTtlCache } from './ttlCache'
 import { hasUsageAccess, isUsageAccessOff } from './usageAccess'
@@ -164,6 +165,7 @@ export function receiveClaudeSessionUsage(reading: ClaudeSessionUsage | null): v
   const { setClaudeUsage, setClaudeUsageError } = useUiStore.getState()
   setClaudeUsage(fromSession(reading))
   setClaudeUsageError(null)
+  void loadClaudePlan()
 }
 
 /** Forgets both sources; for tests. */
@@ -204,6 +206,8 @@ async function readClaudeUsage(
     const usage = await getCachedClaudeUsage(force)
     setClaudeUsage(usage)
     setClaudeUsageError(null)
+    // Status line pushes keep a known plan; reads through the API pick up a changed one.
+    void loadClaudePlan(true)
     finishDevTrace(trace, 'succeeded')
     return usage
   } catch (error) {

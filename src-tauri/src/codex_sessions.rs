@@ -152,7 +152,7 @@ fn snapshot_codex_sessions_inner(cwd: String) -> Result<Vec<CodexSessionSnapshot
 /// name itself carries the session id as its trailing UUID
 /// (`rollout-<timestamp>-<id>.jsonl`), so a filename match avoids opening
 /// every file just to find the right one.
-fn find_codex_session_file(session_id: &str) -> Option<PathBuf> {
+pub(crate) fn find_codex_session_file(session_id: &str) -> Option<PathBuf> {
     let root = codex_sessions_dir()?;
     if !root.is_dir() {
         return None;

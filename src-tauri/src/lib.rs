@@ -48,6 +48,7 @@ mod mcp_health;
 mod mcp_model;
 mod mcp_store;
 mod merge_analyzer;
+mod native_subagent_status;
 mod opencode_bridge;
 mod opencode_gsd_plugin;
 mod opencode_sessions;
@@ -514,6 +515,7 @@ pub fn run() {
             claude_sessions::get_multi_agent_activity,
             codex_sessions::snapshot_codex_sessions,
             codex_sessions::get_codex_session_title,
+            native_subagent_status::native_subagent_completed,
             handoff::prepare_agent_handoff,
             handoff::materialize_agent_handoff,
             handoff::complete_agent_handoff,
@@ -523,6 +525,7 @@ pub fn run() {
             codex_usage::get_codex_usage,
             codex_usage::get_codex_session_usage,
             claude_usage::get_claude_session_usage,
+            claude_usage::get_claude_plan,
             codex_usage::consume_codex_reset_credit,
             antigravity_usage::get_antigravity_usage,
             kimi_usage::get_kimi_usage,

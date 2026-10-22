@@ -31,12 +31,20 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
 - Pane headers and sidebar rows now show the same name: a session named with `/rename` comes first,
   then a name you gave the pane or tab, then the automatic title. A late `/rename` is picked up, and
   leaked system reminder text no longer appears as a title.
+- Native Claude and Codex subagents no longer stay Running on the orchestration board when their
+  stop callback is missed. The board checks the transcript each provider already writes and marks
+  the subagent done once it has finished, and Codex retries a hook delivery that fails.
 - Onetho no longer keeps hitting the Claude usage service while it rate limits. The orchestrator
   reads usage through the shared cache instead of once a minute per pane, requests are at least
   30 seconds apart, and after a refusal no request goes out until a backoff that grows from one
   minute to fifteen ends, even across restarts. The card says it is rate limited and when it will
   try next, its refresh button stays off until then, a reading kept from before is marked as the
   last reading, and a spinner shows while a read is on its way.
+- In Simplified Chinese, relative times under an hour read "minimum value" (`最小值`) instead of
+  minutes; they now read `5 分钟`, spaced like days ago.
+- The Claude usage card shows your real plan instead of always `max · 5x`. It reads the plan and its
+  usage multiplier from the Claude Code sign-in on this machine (`pro`, `max · 5x`, `max · 20x`) and
+  shows no plan when the sign-in does not say.
 
 ## [0.1.0] - 2026-10-19
 

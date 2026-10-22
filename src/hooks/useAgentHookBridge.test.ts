@@ -8,8 +8,10 @@ import {
 } from '../lib/sessionDiscovery'
 import { buildAgentLaunch } from '../lib/sessionLaunch'
 import { peekSession, savedConversationIdFor } from '../lib/sessionResume'
+import * as sessions from '../lib/tauri/sessions'
 import { EMPTY_PROJECTS_FILE } from '../lib/types'
 import type { AgentHookPayload } from '../stores/agentCanvasStore'
+import { useAgentCanvasStore } from '../stores/agentCanvasStore'
 import { useProjectsStore } from '../stores/projectsStore'
 import { migrate } from '../stores/projectsStore.migrations'
 import { useAgentHookBridge } from './useAgentHookBridge'
@@ -31,6 +33,7 @@ const tabs = () => state().projects[0].terminals.map((terminal) => terminal.tabs
 
 beforeEach(() => {
   localStorage.clear()
+  useAgentCanvasStore.getState().clear()
   resetSessionClaimsForTests()
   useProjectsStore.setState({ ...structuredClone(EMPTY_PROJECTS_FILE), hydrated: false })
   const project = state().createProject({ name: 'Four Claude panes' })
@@ -46,6 +49,79 @@ beforeEach(() => {
     registerSessionClaim('claude', 'D:/repo', `chat-${index}`, tab.id)
     registerSessionClaim('claude', 'D:/repo', `chat-${index}`, `pty-${index}`)
   }
+})
+
+describe('native subagent completion recovery', () => {
+  it('closes a Codex node when the local rollout confirms completion without a stop hook', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const hook = await mountBridge()
+    const completed = vi.spyOn(sessions, 'nativeSubagentCompleted').mockResolvedValue(true)
+    act(() =>
+      events.handler?.({
+        payload: {
+          plannerId: 'pty-0',
+          session_id: 'parent-session',
+          hook_event_name: 'SubagentStart',
+          sourceAgent: 'codex',
+          agent_id: '01a15ae9-d7c7-7d73-a25c-463578c2da5a',
+          agent_type: 'default',
+        },
+      }),
+    )
+    try {
+      await act(async () => vi.advanceTimersByTimeAsync(5_000))
+      const node = useAgentCanvasStore.getState().nodes[0]
+      expect(completed).toHaveBeenCalledWith('codex', node.id, 'parent-session', node.startedAt)
+      expect(node.status).toBe('done')
+      const endedAt = node.endedAt
+      act(() =>
+        events.handler?.({
+          payload: {
+            plannerId: 'pty-0',
+            hook_event_name: 'SubagentStop',
+            sourceAgent: 'codex',
+            agent_id: node.id,
+            last_assistant_message: 'Finished',
+          },
+        }),
+      )
+      expect(useAgentCanvasStore.getState().nodes[0]).toMatchObject({
+        status: 'done',
+        endedAt,
+        result: 'Finished',
+      })
+    } finally {
+      vi.useRealTimers()
+      completed.mockRestore()
+      hook.unmount()
+    }
+  })
+
+  it('leaves a Claude node running when its parent session is unknown', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const hook = await mountBridge()
+    const completed = vi.spyOn(sessions, 'nativeSubagentCompleted').mockResolvedValue(true)
+    act(() =>
+      events.handler?.({
+        payload: {
+          plannerId: 'pty-0',
+          hook_event_name: 'SubagentStart',
+          sourceAgent: 'claude',
+          agent_id: 'a4d7766eff983fb69',
+          agent_type: 'Explore',
+        },
+      }),
+    )
+    try {
+      await act(async () => vi.advanceTimersByTimeAsync(5_000))
+      expect(completed).not.toHaveBeenCalled()
+      expect(useAgentCanvasStore.getState().nodes[0].status).toBe('running')
+    } finally {
+      vi.useRealTimers()
+      completed.mockRestore()
+      hook.unmount()
+    }
+  })
 })
 
 async function mountBridge() {

@@ -99,6 +99,15 @@ export async function getCodexSessionTitle(sessionId: string): Promise<string | 
   return invoke<string | null>('get_codex_session_title', { sessionId })
 }
 
+export async function nativeSubagentCompleted(
+  agent: 'claude' | 'codex',
+  agentId: string,
+  sessionId: string | null,
+  startedAtMs: number,
+): Promise<boolean> {
+  return invoke<boolean>('native_subagent_completed', { agent, agentId, sessionId, startedAtMs })
+}
+
 export async function listClaudeSessions(cwd: string): Promise<ClaudeSessionMeta[]> {
   return invoke<ClaudeSessionMeta[]>('list_claude_sessions', { cwd })
 }

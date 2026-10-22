@@ -17,6 +17,17 @@ describe('formatRelativeTimestamp', () => {
     expect(formatRelativeTimestamp(now - 5 * 60_000, now, 'en')).toBe('5min')
   })
 
+  it('formats minutes in Simplified Chinese', () => {
+    const now = new Date('2026-08-08T12:00:00').getTime()
+    expect(formatRelativeTimestamp(now - 5 * 60_000, now, 'zh-CN')).toBe('5 分钟')
+  })
+
+  it('formats days ago in Simplified Chinese with spacing', () => {
+    const now = new Date('2026-08-08T12:00:00').getTime()
+    const ts = now - 3 * 86_400_000
+    expect(formatRelativeTimestamp(ts, now, 'zh-CN')).toBe('3 天')
+  })
+
   it('retorna horário no mesmo dia', () => {
     const now = new Date('2026-08-08T12:00:00').getTime()
     const ts = new Date('2026-08-08T09:32:00').getTime()
