@@ -1396,7 +1396,7 @@ export const zhCN: Record<MessageKey, string> = {
   'greeting.afternoon': '下午好',
   'greeting.evening': '晚上好',
   'time.now': '现在',
-  'time.minutes': '{n}最小值',
+  'time.minutes': '{n} 分钟',
   'time.yesterday': '昨天 {time}',
   'time.daysAgo': '{n} 天',
   /* ---- migrated (long tail) ---- */
