@@ -34,6 +34,8 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
   minute to fifteen ends, even across restarts. The card says it is rate limited and when it will
   try next, its refresh button stays off until then, a reading kept from before is marked as the
   last reading, and a spinner shows while a read is on its way.
+- In Simplified Chinese, relative times under an hour read "minimum value" (`最小值`) instead of
+  minutes; they now read `5 分钟`, spaced like days ago.
 
 ## [0.1.0] - 2026-10-19
 
