@@ -106,6 +106,8 @@ type UiState = {
   claudeUsageLoading: boolean
   /** Where the Claude reading on screen came from, and when it was taken. */
   claudeUsageSource: { kind: 'session' | 'api'; at: number } | null
+  /** Claude account plan for the usage card, from OAuth metadata only. */
+  claudePlanLabel: string | null
   codexUsage: CodexUsage | null
   /** Where the Codex reading on screen came from, and when it was taken. */
   codexUsageSource: { kind: 'session' | 'api'; at: number } | null
@@ -184,6 +186,7 @@ type UiState = {
   ) => void
   setClaudeUsageLoading: (value: boolean) => void
   setClaudeUsageSource: (value: { kind: 'session' | 'api'; at: number } | null) => void
+  setClaudePlanLabel: (value: string | null) => void
   setCodexUsage: (value: CodexUsage | null) => void
   setCodexUsageSource: (value: { kind: 'session' | 'api'; at: number } | null) => void
   setAntigravityUsage: (value: AntigravityUsage | null) => void
@@ -243,6 +246,7 @@ export const useUiStore = create<UiState>((set) => ({
   claudeUsageRetryAt: null,
   claudeUsageLoading: false,
   claudeUsageSource: null,
+  claudePlanLabel: null,
   codexUsage: null,
   codexUsageSource: null,
   antigravityUsage: null,
@@ -299,11 +303,16 @@ export const useUiStore = create<UiState>((set) => ({
   setRuntimeSnapshot: (value) => set({ runtimeSnapshot: value }),
   clearMemoryHistory: () => set({ memoryHistory: [] }),
   setClaudeUsage: (value) =>
-    set(value ? { claudeUsage: value } : { claudeUsage: null, claudeUsageSource: null }),
+    set(
+      value
+        ? { claudeUsage: value }
+        : { claudeUsage: null, claudeUsageSource: null, claudePlanLabel: null },
+    ),
   setClaudeUsageError: (value, retryAt = null) =>
     set({ claudeUsageError: value, claudeUsageRetryAt: retryAt }),
   setClaudeUsageLoading: (value) => set({ claudeUsageLoading: value }),
   setClaudeUsageSource: (value) => set({ claudeUsageSource: value }),
+  setClaudePlanLabel: (value) => set({ claudePlanLabel: value }),
   // A cleared reading has no source left to name.
   setCodexUsage: (value) =>
     set(value ? { codexUsage: value } : { codexUsage: null, codexUsageSource: null }),

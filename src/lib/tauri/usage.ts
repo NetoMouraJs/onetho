@@ -38,6 +38,11 @@ export type ClaudeUsage = {
   model_limits?: ClaudeModelLimit[]
 }
 
+/** Account plan label for the Claude usage card, from local OAuth metadata only. */
+export async function getClaudePlan(): Promise<string | null> {
+  return withUsageAccess('claude', () => invoke<string | null>('get_claude_plan'))
+}
+
 export async function getClaudeUsage(
   source: Extract<DevDiagnosticSource, `claude.${string}`> = 'claude.sharedFetch',
 ): Promise<ClaudeUsage> {

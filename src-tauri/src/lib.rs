@@ -522,6 +522,7 @@ pub fn run() {
             codex_usage::get_codex_usage,
             codex_usage::get_codex_session_usage,
             claude_usage::get_claude_session_usage,
+            claude_usage::get_claude_plan,
             codex_usage::consume_codex_reset_credit,
             antigravity_usage::get_antigravity_usage,
             kimi_usage::get_kimi_usage,

@@ -27,7 +27,7 @@ pub struct ClaudeUsage {
     pub model_limits: Vec<ModelLimit>,
 }
 
-fn read_credentials_file_with_retry(path: &std::path::Path) -> Option<String> {
+fn read_credentials_json_with_retry(path: &std::path::Path) -> Option<serde_json::Value> {
     for attempt in 0..3 {
         if attempt > 0 {
             std::thread::sleep(std::time::Duration::from_millis(80));
@@ -35,20 +35,117 @@ fn read_credentials_file_with_retry(path: &std::path::Path) -> Option<String> {
         let Ok(contents) = std::fs::read_to_string(path) else {
             continue;
         };
-        let Ok(json) = serde_json::from_str::<serde_json::Value>(&contents) else {
-            continue;
-        };
-        if let Some(tok) = json
-            .get("claudeAiOauth")
-            .and_then(|o| o.get("accessToken"))
-            .and_then(|v| v.as_str())
-        {
-            if !tok.is_empty() {
-                return Some(tok.to_string());
-            }
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&contents) {
+            return Some(json);
         }
     }
     None
+}
+
+fn oauth_object(root: &serde_json::Value) -> Option<&serde_json::Value> {
+    root.get("claudeAiOauth").filter(|value| value.is_object())
+}
+
+fn access_token_from_oauth(oauth: &serde_json::Value) -> Option<String> {
+    oauth
+        .get("accessToken")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|tok| !tok.is_empty())
+        .map(str::to_string)
+}
+
+fn read_credentials_file_with_retry(path: &std::path::Path) -> Option<String> {
+    read_credentials_json_with_retry(path).and_then(|json| {
+        oauth_object(&json)
+            .and_then(access_token_from_oauth)
+    })
+}
+
+/// Builds the plan label shown on the usage card, such as `max · 5x`, from OAuth metadata only.
+pub(crate) fn format_claude_plan_label(
+    subscription_type: Option<&str>,
+    rate_limit_tier: Option<&str>,
+) -> Option<String> {
+    let plan = subscription_type
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_ascii_lowercase();
+    match rate_limit_tier.and_then(tier_multiplier) {
+        Some(multiplier) => Some(format!("{plan} · {multiplier}")),
+        None => Some(plan),
+    }
+}
+
+/// The usage multiplier a rate limit tier ends with (`default_claude_max_20x` → `20x`); tiers
+/// without one, such as `default_claude_ai`, have none.
+fn tier_multiplier(tier: &str) -> Option<String> {
+    let last = tier.trim().rsplit('_').next()?.to_ascii_lowercase();
+    let digits = last.strip_suffix('x')?;
+    (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())).then_some(last)
+}
+
+fn plan_label_from_oauth(oauth: &serde_json::Value) -> Option<String> {
+    format_claude_plan_label(
+        oauth.get("subscriptionType").and_then(|v| v.as_str()),
+        oauth.get("rateLimitTier").and_then(|v| v.as_str()),
+    )
+}
+
+fn plan_label_from_credentials_root(root: &serde_json::Value) -> Option<String> {
+    oauth_object(root).and_then(plan_label_from_oauth)
+}
+
+fn discover_credentials_root() -> Option<serde_json::Value> {
+    if let Some(home) = dirs_next::home_dir() {
+        let cred_path = home.join(".claude").join(".credentials.json");
+        if let Some(json) = read_credentials_json_with_retry(&cred_path) {
+            return Some(json);
+        }
+    }
+
+    let service = "Claude Code-credentials";
+    let mut usernames: Vec<String> = Vec::new();
+    if let Ok(user) = std::env::var("USER").or_else(|_| std::env::var("USERNAME")) {
+        if !user.is_empty() {
+            usernames.push(user);
+        }
+    }
+    for u in ["default", "user", "claude", ""] {
+        usernames.push(u.to_string());
+    }
+    for username in &usernames {
+        if let Ok(entry) = keyring::Entry::new(service, username) {
+            if let Ok(secret) = entry.get_password() {
+                if secret.is_empty() {
+                    continue;
+                }
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&secret) {
+                    return Some(json);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn discover_plan_label() -> Option<String> {
+    plan_label_unless_token_override(std::env::var("CLAUDE_OAUTH_TOKEN").ok().as_deref(), || {
+        discover_credentials_root().and_then(|root| plan_label_from_credentials_root(&root))
+    })
+}
+
+/// A `CLAUDE_OAUTH_TOKEN` override may belong to another account than the local sign-in, so the
+/// plan stays unknown instead of being read from that sign-in.
+fn plan_label_unless_token_override(
+    env_token: Option<&str>,
+    discover: impl FnOnce() -> Option<String>,
+) -> Option<String> {
+    if env_token.is_some_and(|tok| !tok.is_empty()) {
+        return None;
+    }
+    discover()
 }
 
 /// Try to find the Claude OAuth token.
@@ -69,7 +166,7 @@ fn discover_token() -> Option<String> {
     }
 
     // 3. Keyring (Windows Credential Manager / macOS Keychain).
-    //    No macOS o Claude Code grava a entrada com account = username local,
+    //    On macOS Claude Code saves the entry with account = the local username,
 
     let service = "Claude Code-credentials";
     let mut usernames: Vec<String> = Vec::new();
@@ -95,20 +192,23 @@ fn discover_token() -> Option<String> {
     None
 }
 
-/// ({"claudeAiOauth":{"accessToken":...}}), como no macOS Keychain.
+/// Keychain entries store `{"claudeAiOauth":{"accessToken":...}}`, like on macOS.
 fn extract_token_from_secret(secret: &str) -> String {
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(secret) {
-        if let Some(tok) = json
-            .get("claudeAiOauth")
-            .and_then(|o| o.get("accessToken"))
-            .and_then(|v| v.as_str())
-        {
-            if !tok.is_empty() {
-                return tok.to_string();
-            }
+        if let Some(tok) = oauth_object(&json).and_then(access_token_from_oauth) {
+            return tok;
         }
     }
     secret.to_string()
+}
+
+/// Account plan for the Claude usage card, from OAuth metadata only (no token leaves the backend).
+#[tauri::command]
+pub async fn get_claude_plan() -> Result<Option<String>, String> {
+    // Reading the credentials may sleep between retries and query the keyring.
+    tokio::task::spawn_blocking(discover_plan_label)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -376,5 +476,88 @@ mod tests {
     fn missing_limits_means_no_model_rows() {
         let usage = super::parse_usage(&json!({ "five_hour": null, "limits": null }));
         assert!(usage.model_limits.is_empty());
+    }
+
+    #[test]
+    fn formats_known_claude_plan_from_oauth_fields() {
+        assert_eq!(
+            super::format_claude_plan_label(Some("max"), Some("default_claude_max_5x")),
+            Some("max · 5x".to_string())
+        );
+        assert_eq!(
+            super::format_claude_plan_label(Some("max"), Some("default_claude_max_20x")),
+            Some("max · 20x".to_string())
+        );
+        assert_eq!(
+            super::format_claude_plan_label(Some("PRO"), None),
+            Some("pro".to_string())
+        );
+    }
+
+    #[test]
+    fn tier_without_a_multiplier_shows_the_plan_alone() {
+        assert_eq!(
+            super::format_claude_plan_label(Some("pro"), Some("default_claude_ai")),
+            Some("pro".to_string())
+        );
+        assert_eq!(
+            super::format_claude_plan_label(Some("max"), Some("default_claude_max_other")),
+            Some("max".to_string())
+        );
+        assert_eq!(
+            super::format_claude_plan_label(Some("pro"), Some("default_claude_x")),
+            Some("pro".to_string())
+        );
+    }
+
+    #[test]
+    fn unknown_claude_plan_has_no_label() {
+        assert_eq!(super::format_claude_plan_label(None, None), None);
+        assert_eq!(
+            super::format_claude_plan_label(Some(""), Some("default_claude_max_5x")),
+            None
+        );
+        assert_eq!(
+            super::format_claude_plan_label(None, Some("default_claude_max_5x")),
+            None
+        );
+    }
+
+    #[test]
+    fn reads_plan_from_credentials_json_without_exposing_token() {
+        let label = super::plan_label_from_credentials_root(&json!({
+            "claudeAiOauth": {
+                "accessToken": "secret-token",
+                "subscriptionType": "max",
+                "rateLimitTier": "default_claude_max_5x"
+            }
+        }));
+        assert_eq!(label, Some("max · 5x".to_string()));
+    }
+
+    #[test]
+    fn token_override_hides_the_local_plan() {
+        let local = || Some("max · 5x".to_string());
+        assert_eq!(super::plan_label_unless_token_override(Some("env-token"), local), None);
+        assert_eq!(
+            super::plan_label_unless_token_override(Some(""), local),
+            Some("max · 5x".to_string())
+        );
+        assert_eq!(
+            super::plan_label_unless_token_override(None, local),
+            Some("max · 5x".to_string())
+        );
+    }
+
+    #[test]
+    fn unreadable_credentials_have_no_plan_label() {
+        assert!(super::plan_label_from_credentials_root(&json!({})).is_none());
+        assert!(super::plan_label_from_credentials_root(&json!({ "claudeAiOauth": null })).is_none());
+        assert!(
+            super::plan_label_from_credentials_root(&json!({
+                "claudeAiOauth": { "accessToken": "only-a-token" }
+            }))
+                .is_none()
+        );
     }
 }
