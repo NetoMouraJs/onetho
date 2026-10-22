@@ -1,6 +1,6 @@
 [package]
 name = "alethe"
-version = "0.1.0-rc01"
+version = "0.1.0-rc02"
 description = "Onetho — terminal multiplexer GUI (fork of Alethe)"
 authors = ["Kauã Miguel", "Neto Moura"]
 license = "AGPL-3.0-or-later"
