@@ -241,6 +241,11 @@ export type SubTab = {
   useRouter9?: boolean
 }
 
+export type SessionTitle = {
+  title: string
+  userNamed: boolean
+}
+
 export type AgentHandoffBootstrap = {
   id: string
   contextDir: string

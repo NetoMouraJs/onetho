@@ -149,6 +149,7 @@ fn non_empty_trimmed(value: Option<String>) -> Option<String> {
 struct SessionRecords {
     /// The user's name for the session wins over Claude's generated title.
     title: Option<String>,
+    user_named: bool,
     first_user_prompt: Option<String>,
     message_count: usize,
 }
@@ -199,8 +200,10 @@ fn scan_session_records(reader: &mut impl BufRead) -> SessionRecords {
         }
     }
 
+    let user_named = custom_title.is_some();
     SessionRecords {
         title: custom_title.or(ai_title),
+        user_named,
         first_user_prompt,
         message_count,
     }
@@ -438,6 +441,51 @@ pub async fn get_claude_session_title(
     })
     .await
     .map_err(|error| format!("get_claude_session_title: falha na task bloqueante: {error}"))?
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeSessionTitle {
+    pub title: String,
+    pub user_named: bool,
+}
+
+#[tauri::command]
+pub async fn get_claude_session_title_info(
+    cwd: String,
+    session_id: String,
+) -> Result<Option<ClaudeSessionTitle>, String> {
+    tokio::task::spawn_blocking(move || {
+        let started = std::time::Instant::now();
+        let result = get_claude_session_title_info_inner(cwd, session_id);
+        log_slow_scan("get_claude_session_title_info", started, 1);
+        result
+    })
+    .await
+    .map_err(|error| format!("get_claude_session_title_info: blocking task failed: {error}"))?
+}
+
+fn get_claude_session_title_info_inner(
+    cwd: String,
+    session_id: String,
+) -> Result<Option<ClaudeSessionTitle>, String> {
+    if session_id.is_empty() || session_id.contains(['/', '\\', '.']) {
+        return Ok(None);
+    }
+    for project_dir in project_dirs_for_cwd(&cwd)? {
+        let path = project_dir.join(format!("{session_id}.jsonl"));
+        let Ok(file) = fs::File::open(&path) else {
+            continue;
+        };
+        let mut reader = BufReader::with_capacity(64 * 1024, file);
+        let records = scan_session_records(&mut reader);
+        let title = records.title.or(records.first_user_prompt);
+        return Ok(title.map(|title| ClaudeSessionTitle {
+            title,
+            user_named: records.user_named,
+        }));
+    }
+    Ok(None)
 }
 
 fn get_claude_session_title_inner(
@@ -801,7 +849,9 @@ mod tests {
             r#"{"type":"custom-title","customTitle":"Second"}"#,
             "\n",
         );
-        assert_eq!(scan(input).title.as_deref(), Some("Second"));
+        let records = scan(input);
+        assert_eq!(records.title.as_deref(), Some("Second"));
+        assert!(records.user_named);
     }
 
     #[test]
@@ -814,7 +864,26 @@ mod tests {
         );
         let records = scan(input);
         assert_eq!(records.title.as_deref(), Some("Generated"));
+        assert!(!records.user_named);
         assert_eq!(records.first_user_prompt.as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn the_first_prompt_is_not_a_user_named_title() {
+        let records = scan(r#"{"type":"user","message":{"content":"hello"}}"#);
+        assert_eq!(records.first_user_prompt.as_deref(), Some("hello"));
+        assert!(!records.user_named);
+    }
+
+    #[test]
+    fn session_title_info_uses_the_frontend_field_names() {
+        let value = serde_json::to_value(ClaudeSessionTitle {
+            title: "Session".to_string(),
+            user_named: true,
+        })
+        .unwrap();
+        assert_eq!(value["title"], "Session");
+        assert_eq!(value["userNamed"], true);
     }
 }
 

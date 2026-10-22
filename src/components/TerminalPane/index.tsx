@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 
+import { useSessionTitle } from '../../hooks/useSidebarChatTitle'
 import { relaunchAgentPty } from '../../lib/agentRelaunch'
 import { graphifyRepoOf } from '../../lib/claudeMcpConfigs'
 import { buildGhosttyCommand } from '../../lib/ghosttyCommand'
@@ -29,13 +30,8 @@ import {
   savedConversationIdFor,
   saveSession,
 } from '../../lib/sessionResume'
-import {
-  completeAgentHandoff,
-  getClaudeSessionTitle,
-  getCodexSessionTitle,
-  getPtyCwd,
-  openInVscode,
-} from '../../lib/tauri'
+import { paneDisplayName } from '../../lib/sessionTitle'
+import { completeAgentHandoff, getPtyCwd, openInVscode } from '../../lib/tauri'
 import {
   type AgentType,
   isShellAgentType,
@@ -354,50 +350,13 @@ export const TerminalPane = memo(function TerminalPane({
 
   const cwd = activeTab?.cwd?.trim() || terminal.cwd?.trim() || ''
 
-  const sessionTitleAgentType =
-    activeTab?.type === 'claude' || activeTab?.type === 'codex' ? activeTab.type : null
-  const sessionTitleId = sessionTitleAgentType ? activeTab?.sessionId : undefined
-
-  const [sessionTitle, setSessionTitle] = useState<string | null>(null)
-  useEffect(() => {
-    setSessionTitle(null)
-    if (!sessionTitleAgentType || !sessionTitleId) return
-    if (sessionTitleAgentType === 'claude' && !cwd) return
-    const agentType = sessionTitleAgentType
-    const sessionId = sessionTitleId
-    let cancelled = false
-    const fetchTitle = () => {
-      const request =
-        agentType === 'claude'
-          ? getClaudeSessionTitle(cwd, sessionId)
-          : getCodexSessionTitle(sessionId)
-      request
-        .then((title) => {
-          if (cancelled || !title) return
-          setSessionTitle(title)
-          // Promise callbacks run after the interval below is assigned.
-          window.clearInterval(intervalId)
-        })
-        .catch(() => {})
-    }
-    fetchTitle()
-    const intervalId = window.setInterval(fetchTitle, 6000)
-    return () => {
-      cancelled = true
-      window.clearInterval(intervalId)
-    }
-  }, [sessionTitleAgentType, sessionTitleId, cwd])
-
-  const hasCustomTabName = Boolean(activeTab && activeTab.name !== activeTab.type)
-  const displayName = activeTab
-    ? hasCustomTabName
-      ? activeTab.name
-      : (sessionTitle ?? activeTab.name)
-    : terminal.name
+  const sessionTitle = useSessionTitle(activeTab, cwd)
+  const displayName = paneDisplayName(terminal, activeTab, sessionTitle)
 
   const setSubTabName = useProjectsStore((s) => s.setSubTabName)
   const [isRenaming, setIsRenaming] = useState(false)
   const [renameDraft, setRenameDraft] = useState('')
+  const [renameStart, setRenameStart] = useState('')
   const renameInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
@@ -413,11 +372,15 @@ export const TerminalPane = memo(function TerminalPane({
   const startRename = () => {
     if (!activeTab) return
     setRenameDraft(displayName || '')
+    setRenameStart(displayName || '')
     setIsRenaming(true)
   }
 
   const commitRename = () => {
-    if (activeTab) setSubTabName(projectId, terminal.id, activeTab.id, renameDraft)
+    // Compare with the text the input opened with: the title can change while it is open.
+    if (activeTab && renameDraft.trim() !== renameStart.trim()) {
+      setSubTabName(projectId, terminal.id, activeTab.id, renameDraft)
+    }
     setIsRenaming(false)
   }
 

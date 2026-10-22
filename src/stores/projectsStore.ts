@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import { customAgentIconComponent } from '../components/icons/customAgentIcons'
 import { syncCustomAgentProviders } from '../lib/agentProviders'
 import { DEFAULT_GRID_ID, normalizeProjectGrids, selectProjectGrid } from '../lib/projectGrids'
+import { sanitizeLeakedTabNames } from '../lib/sessionTitle'
 import { setStorageNamespace } from '../lib/storageNamespace'
 import {
   listProfiles,
@@ -767,7 +768,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => {
           return
         }
         const parsed = JSON.parse(raw)
-        const migrated = migrate(parsed)
+        const migrated = sanitizeLeakedTabNames(migrate(parsed))
         set({
           ...migrated,
           hydrated: true,

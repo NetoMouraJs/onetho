@@ -28,6 +28,9 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
 
 ### Fixed
 
+- Pane headers and sidebar rows now show the same name: a session named with `/rename` comes first,
+  then a name you gave the pane or tab, then the automatic title. A late `/rename` is picked up, and
+  leaked system reminder text no longer appears as a title.
 - Native Claude and Codex subagents no longer stay Running on the orchestration board when their
   stop callback is missed. The board checks the transcript each provider already writes and marks
   the subagent done once it has finished, and Codex retries a hook delivery that fails.
