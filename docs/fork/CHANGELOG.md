@@ -36,6 +36,9 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
   last reading, and a spinner shows while a read is on its way.
 - In Simplified Chinese, relative times under an hour read "minimum value" (`最小值`) instead of
   minutes; they now read `5 分钟`, spaced like days ago.
+- The Claude usage card shows your real plan instead of always `max · 5x`. It reads the plan and its
+  usage multiplier from the Claude Code sign-in on this machine (`pro`, `max · 5x`, `max · 20x`) and
+  shows no plan when the sign-in does not say.
 
 ## [0.1.0] - 2026-10-19
 

@@ -324,6 +324,7 @@ function useSourceLabel(source: { kind: 'session' | 'api'; at: number } | null):
 
 function ClaudeCard({ usage }: { usage: ClaudeUsage | null }) {
   const t = useT()
+  const planLabel = useUiStore((s) => s.claudePlanLabel)
   const sourceLabel = useSourceLabel(useUiStore((s) => s.claudeUsageSource))
   const usageError = useUiStore((s) => s.claudeUsageError)
   const retryAt = useUiStore((s) => s.claudeUsageRetryAt)
@@ -349,7 +350,7 @@ function ClaudeCard({ usage }: { usage: ClaudeUsage | null }) {
       badgeClass={styles.badgeClaude}
       icon={<ClaudeIcon size={16} />}
       name="claude code"
-      plan={usage ? 'max · 5x' : undefined}
+      plan={usage && planLabel ? planLabel : undefined}
       accent={accent}
       // A reading kept from before a failed refresh is not live.
       hasData={!!usage && !usageError}
