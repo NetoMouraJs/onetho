@@ -46,6 +46,8 @@ export type AgentNode = {
   plannerId: string | null
   /** Which CLI spawned this subagent — decides the icon on the orchestrator canvas. */
   sourceAgent: 'claude' | 'codex'
+  /** Parent session, used to find a Claude subagent transcript if its stop hook is missed. */
+  sessionId?: string | null
   /** Team name, for teammates only. */
   team: string | null
   /** Number of teammate turns represented by this node. */
@@ -256,6 +258,7 @@ export const useAgentCanvasStore = create<AgentCanvasState>((set, get) => ({
               kind: 'subagent',
               plannerId: raw.plannerId ?? null,
               sourceAgent: raw.sourceAgent ?? 'claude',
+              sessionId: raw.session_id ?? null,
               team: null,
               turns: 0,
               prompt: pending?.description ?? pending?.prompt ?? null,
@@ -287,11 +290,13 @@ export const useAgentCanvasStore = create<AgentCanvasState>((set, get) => ({
         }
         const isTeammate = s.nodes[idx].kind === 'teammate'
         console.log(`[agentCanvasStore] ${isTeammate ? 'teammate idle' : 'node done'} id=${id}`)
+        // A stop that arrives after the transcript already closed the node keeps that end time.
+        const alreadyDone = !isTeammate && s.nodes[idx].status === 'done'
         const nodes = [...s.nodes]
         nodes[idx] = {
           ...nodes[idx],
           status: isTeammate ? 'idle' : 'done',
-          endedAt: Date.now(),
+          endedAt: alreadyDone ? nodes[idx].endedAt : Date.now(),
           result: raw.last_assistant_message ?? nodes[idx].result,
           transcriptPath: raw.agent_transcript_path ?? nodes[idx].transcriptPath,
         }

@@ -346,16 +346,28 @@ fn toml_string(value: &str) -> String {
 /// like Claude Code's, so a PowerShell forwarder is piped Codex's hook JSON on stdin. One script
 /// per install, never per terminal or per port: Codex asks to trust .codex/config.toml again
 /// whenever it changes, so the endpoint lives inside the script and the terminal identifies itself
-/// through ALETHE_PLANNER at run time.
+/// through ALETHE_PLANNER at run time. A failed delivery still exits 0: the hooks stay in the
+/// repo's config, and Codex would report a hook error for every subagent while the app is closed.
 fn write_codex_hook_forwarder(port: u16) -> Result<PathBuf, String> {
     let endpoint = listener_endpoint(port);
     let token = init_token();
     let script = format!(
         "$body = [Console]::In.ReadToEnd()\r\n\
          $planner = $env:ALETHE_PLANNER\r\n\
-         try {{\r\n\
-         \x20\x20Invoke-RestMethod -Uri '{endpoint}/hook' -Method Post -Body $body -ContentType 'application/json' -Headers @{{ 'X-Alethe-Token' = '{token}'; 'X-Alethe-Planner' = $planner; 'X-Alethe-Agent' = 'codex' }} | Out-Null\r\n\
-         }} catch {{}}\r\n",
+         $uri = '{endpoint}/hook'\r\n\
+         $headers = @{{ 'X-Alethe-Token' = '{token}'; 'X-Alethe-Planner' = $planner; 'X-Alethe-Agent' = 'codex' }}\r\n\
+         for ($attempt = 0; $attempt -lt 3; $attempt++) {{\r\n\
+         \x20\x20try {{\r\n\
+         \x20\x20\x20\x20Invoke-RestMethod -Uri $uri -Method Post -Body $body -ContentType 'application/json' -Headers $headers | Out-Null\r\n\
+         \x20\x20\x20\x20exit 0\r\n\
+         \x20\x20}} catch {{\r\n\
+         \x20\x20\x20\x20if ($attempt -eq 2) {{\r\n\
+         \x20\x20\x20\x20\x20\x20[Console]::Error.WriteLine('[alethe-hook] request failed: ' + $_.Exception.Message)\r\n\
+         \x20\x20\x20\x20\x20\x20exit 0\r\n\
+         \x20\x20\x20\x20}}\r\n\
+         \x20\x20\x20\x20Start-Sleep -Milliseconds 200\r\n\
+         \x20\x20}}\r\n\
+         }}\r\n",
         endpoint = endpoint,
         token = ps_escape(token),
     );
@@ -830,6 +842,31 @@ mod tests {
             .expect("generated path should be valid TOML");
 
         assert_eq!(document["path"].as_str(), Some(path));
+    }
+
+    #[test]
+    fn codex_hook_forwarder_retries_and_reports_failures() {
+        let path = super::write_codex_hook_forwarder(8124).expect("hook forwarder should be written");
+        let script = std::fs::read_to_string(&path).expect("hook forwarder should be readable");
+        let removed = std::fs::remove_file(&path);
+
+        assert!(
+            !script.contains("catch {}"),
+            "hook forwarder should not swallow request failures"
+        );
+        assert!(
+            script.contains("[Console]::Error.WriteLine("),
+            "hook forwarder should report request failures on stderr"
+        );
+        assert!(
+            script.contains("for ($attempt = 0; $attempt -lt 3; $attempt++)"),
+            "hook forwarder should retry transient delivery failures"
+        );
+        assert!(
+            !script.contains("exit 1"),
+            "hook forwarder should not fail Codex hooks while the app is closed"
+        );
+        removed.expect("generated hook forwarder should be removable");
     }
 
     #[test]
