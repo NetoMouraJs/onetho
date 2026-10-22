@@ -176,7 +176,7 @@ fn resolve_clone_target(requested: &str, normalized_url: &str) -> Result<String,
     let base = if trimmed.is_empty() {
         dirs_next::home_dir()
             .ok_or_else(|| "Não foi possível localizar a pasta do usuário".to_string())?
-            .join("Alethe")
+            .join(crate::brand::NAME)
     } else {
         std::path::PathBuf::from(trimmed)
     };
@@ -186,6 +186,28 @@ fn resolve_clone_target(requested: &str, normalized_url: &str) -> Result<String,
         base.join(&folder)
     };
     Ok(target.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod clone_target_brand_tests {
+    use super::resolve_clone_target;
+
+    #[test]
+    fn default_clone_target_uses_the_fork_folder() {
+        let target = resolve_clone_target("", "https://github.com/owner/repo.git").unwrap();
+        let path = std::path::Path::new(&target);
+        assert_eq!(path.file_name().unwrap(), "repo");
+        assert_eq!(path.parent().unwrap().file_name().unwrap(), "Onetho");
+    }
+
+    #[test]
+    fn explicit_clone_target_keeps_the_requested_folder() {
+        let target = resolve_clone_target("custom", "https://github.com/owner/repo.git").unwrap();
+        assert_eq!(
+            std::path::Path::new(&target),
+            std::path::Path::new("custom").join("repo")
+        );
+    }
 }
 
 fn normalize_github_url(raw: &str) -> String {

@@ -337,7 +337,7 @@ pub async fn open_orchestration_window(app: AppHandle, terminal_id: String) -> R
         return window.set_focus().map_err(|error| error.to_string());
     }
     tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App("index.html".into()))
-        .title("Alethe")
+        .title(crate::brand::NAME)
         .inner_size(1180.0, 780.0)
         .min_inner_size(640.0, 420.0)
         .build()

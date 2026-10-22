@@ -22,6 +22,9 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
 
 ### Changed
 
+- Show Onetho, not Alethe, in the text hard-coded outside the translations: the orchestration
+  window title, Remote Control errors, the Spotify sign-in page, the Agent Sandbox thread title and
+  the cloud sync gist description. Repositories cloned in the app go to `~/Onetho/<repo>` by default.
 - Claude and Codex usage is asked from their APIs every 10 minutes instead of every 5, since the
   sessions push every change in between. Kimi is polled every 5 minutes instead of every minute,
   like Antigravity. A manual refresh still asks right away.

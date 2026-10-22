@@ -15,7 +15,6 @@ use crate::paths::{activity_stats_file_path, app_data_dir, projects_file_path};
 use crate::provider_common::now_ms;
 use crate::secure_store::{OsSecretStore, SecretKind, SecretStore};
 
-const GIST_DESCRIPTION: &str = "Alethe sync — projects & activity (managed by the app)";
 const USER_AGENT: &str = "Alethe";
 const GITHUB_API: &str = "https://api.github.com";
 
@@ -220,7 +219,7 @@ fn gist_payload(files: &[(String, String)]) -> Value {
         files_json.insert(name.clone(), json!({ "content": content }));
     }
     json!({
-        "description": GIST_DESCRIPTION,
+        "description": format!("{} sync — projects & activity (managed by the app)", crate::brand::NAME),
         "public": false,
         "files": Value::Object(files_json),
     })
@@ -432,6 +431,17 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn gist_payload_names_the_fork_and_keeps_files() {
+        let files = vec![("projects.json".to_string(), "{}".to_string())];
+        let payload = gist_payload(&files);
+        assert_eq!(
+            payload["description"],
+            "Onetho sync — projects & activity (managed by the app)"
+        );
+        assert_eq!(payload["files"]["projects.json"]["content"], "{}");
+    }
 
     #[derive(Default)]
     struct FakeStore {
