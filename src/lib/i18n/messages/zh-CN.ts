@@ -1281,8 +1281,18 @@ export const zhCN: Record<MessageKey, string> = {
   'whatsNew.forkBase': '基于 {upstream} v{version}，包含截至上游提交 {commit} 的更改。',
   'whatsNew.upstreamHeading': '{upstream} 版本',
   'whatsNew.fork.v010.note1': '首个 Onetho 版本：拥有独立的名称、图标、标识符、版本号和更新渠道。',
-  'whatsNew.fork.v010.note2': '你命名的 Claude 会话现在会显示该名称。',
+  'whatsNew.fork.v010.note2':
+    '窗格标题和侧边栏行显示相同的名称：优先使用 /rename 设置的名称，其次是你自定义的名称，最后是自动标题。',
   'whatsNew.fork.v010.note3': '只要出现调整大小的光标，侧边栏的调整手柄就会显示。',
+  'whatsNew.fork.v010.note4':
+    'Claude 和 Codex 的用量会在每次响应后由会话本身更新，卡片会显示每次读数的来源和时间。',
+  'whatsNew.fork.v010.note5': 'Claude 用量卡片现在显示你的实际套餐，而不再总是 max · 5x。',
+  'whatsNew.fork.v010.note6': 'Claude 用量服务限流时，Onetho 会等待，卡片会显示下次重试的时间。',
+  'whatsNew.fork.v010.note7':
+    '原生 Claude 和 Codex 子代理完成后，不会再一直在编排看板上显示为运行中。',
+  'whatsNew.fork.v010.note8':
+    '其余硬编码文本中的 Alethe 已改为 Onetho，在应用中克隆的仓库默认放在 ~/Onetho。',
+  'whatsNew.fork.v010.note9': '简体中文中一小时以内的相对时间现在显示正确。',
   'rightSidebar.backToTodo': '返回到待办事项',
   'rightSidebar.markdownError': '无法加载 Markdown',
   'rightSidebar.navigation': '右侧边栏导航',
