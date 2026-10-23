@@ -18,6 +18,16 @@ export const FORK_RELEASES: ForkRelease[] = [
     version: '0.1.0',
     date: '2026-10-19',
     upstream: { version: '1.7.0', commit: 'e684e72' },
-    noteKeys: ['whatsNew.fork.v010.note1', 'whatsNew.fork.v010.note2', 'whatsNew.fork.v010.note3'],
+    noteKeys: [
+      'whatsNew.fork.v010.note1',
+      'whatsNew.fork.v010.note2',
+      'whatsNew.fork.v010.note3',
+      'whatsNew.fork.v010.note4',
+      'whatsNew.fork.v010.note5',
+      'whatsNew.fork.v010.note6',
+      'whatsNew.fork.v010.note7',
+      'whatsNew.fork.v010.note8',
+      'whatsNew.fork.v010.note9',
+    ],
   },
 ]

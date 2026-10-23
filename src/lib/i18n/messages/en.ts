@@ -1527,8 +1527,20 @@ export const en = {
   'whatsNew.upstreamHeading': '{upstream} releases',
   'whatsNew.fork.v010.note1':
     'First Onetho release, with its own name, icon, identifier, version line and update channel.',
-  'whatsNew.fork.v010.note2': 'A Claude session you named now shows that name.',
+  'whatsNew.fork.v010.note2':
+    'Pane headers and sidebar rows show the same name: one set with /rename first, then your own, then the automatic title.',
   'whatsNew.fork.v010.note3': 'The sidebar resize handle shows whenever the resize cursor does.',
+  'whatsNew.fork.v010.note4':
+    'Claude and Codex usage updates from their sessions after every response, and the card says where each reading came from and how old it is.',
+  'whatsNew.fork.v010.note5':
+    'The Claude usage card shows your real plan instead of always max · 5x.',
+  'whatsNew.fork.v010.note6':
+    'While the Claude usage service rate limits, Onetho waits and the card says when it will try again.',
+  'whatsNew.fork.v010.note7':
+    'Native Claude and Codex subagents no longer stay running on the orchestration board after they finish.',
+  'whatsNew.fork.v010.note8':
+    'Onetho replaces Alethe in the remaining hard-coded text, and repositories cloned in the app go to ~/Onetho.',
+  'whatsNew.fork.v010.note9': 'Relative times under an hour read correctly in Simplified Chinese.',
   'rightSidebar.backToTodo': 'Back to Todo',
   'rightSidebar.markdownError': 'Could not load Markdown',
   'rightSidebar.navigation': 'Right sidebar navigation',

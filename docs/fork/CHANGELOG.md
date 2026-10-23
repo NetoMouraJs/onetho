@@ -8,8 +8,19 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-19
+
+Upstream base: Alethe 1.7.0 plus upstream `main` up to `e684e72` (`v1.7.0-259-ge684e72`).
+
 ### Added
 
+- Its own identity: the name Onetho, the `onetho` terminal command, the `com.netomoura.onetho`
+  identifier, and updates from this repository's releases.
+- Its own icon, the Open orbit ring, in the executable, the installer, the taskbar and the four
+  options of the app icon picker. The workspace empty state and the default profile picture use it
+  too.
+- Its own version line, starting at 0.1.0, with release candidates (`0.1.0-rcNN`) before the tag.
+  The What's New panel lists Onetho's releases first, each with its upstream base, then upstream's.
 - A local Dev diagnostics dashboard records Claude and Codex usage refresh attempts and frontend failures with safe metadata, correlation IDs, filters and JSON export.
 - Error rows in Dev diagnostics now expand to show their event details and a sanitized frontend stack when available.
 - Codex usage updates on every Codex turn, read from the session files Codex already writes, so the
@@ -31,6 +42,8 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
 
 ### Fixed
 
+- A Claude session you named now shows that name.
+- The sidebar resize handle shows whenever the resize cursor does.
 - Pane headers and sidebar rows now show the same name: a session named with `/rename` comes first,
   then a name you gave the pane or tab, then the automatic title. A late `/rename` is picked up, and
   leaked system reminder text no longer appears as a title.
@@ -48,22 +61,3 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
 - The Claude usage card shows your real plan instead of always `max · 5x`. It reads the plan and its
   usage multiplier from the Claude Code sign-in on this machine (`pro`, `max · 5x`, `max · 20x`) and
   shows no plan when the sign-in does not say.
-
-## [0.1.0] - 2026-10-19
-
-Upstream base: Alethe 1.7.0 plus upstream `main` up to `e684e72` (`v1.7.0-259-ge684e72`).
-
-### Added
-
-- Its own identity: the name Onetho, the `onetho` terminal command, the `com.netomoura.onetho`
-  identifier, and updates from this repository's releases.
-- Its own icon, the Open orbit ring, in the executable, the installer, the taskbar and the four
-  options of the app icon picker. The workspace empty state and the default profile picture use it
-  too.
-- Its own version line, starting at 0.1.0, with release candidates (`0.1.0-rcNN`) before the tag.
-  The What's New panel lists Onetho's releases first, each with its upstream base, then upstream's.
-
-### Fixed
-
-- A Claude session you named now shows that name.
-- The sidebar resize handle shows whenever the resize cursor does.

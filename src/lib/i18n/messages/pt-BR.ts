@@ -1554,9 +1554,22 @@ export const ptBR: Record<MessageKey, string> = {
   'whatsNew.upstreamHeading': 'Versões do {upstream}',
   'whatsNew.fork.v010.note1':
     'Primeira versão do Onetho, com nome, ícone, identificador, numeração de versões e canal de atualização próprios.',
-  'whatsNew.fork.v010.note2': 'Uma sessão do Claude que você nomeou agora mostra esse nome.',
+  'whatsNew.fork.v010.note2':
+    'Os cabeçalhos dos painéis e as linhas da barra lateral mostram o mesmo nome: primeiro o definido com /rename, depois o que você deu, depois o título automático.',
   'whatsNew.fork.v010.note3':
     'A alça de redimensionar da barra lateral aparece sempre que o cursor de redimensionar aparece.',
+  'whatsNew.fork.v010.note4':
+    'O uso do Claude e do Codex é atualizado pelas próprias sessões a cada resposta, e o card mostra de onde veio cada leitura e há quanto tempo.',
+  'whatsNew.fork.v010.note5':
+    'O card de uso do Claude mostra o seu plano real, em vez de sempre max · 5x.',
+  'whatsNew.fork.v010.note6':
+    'Enquanto o serviço de uso do Claude limita as requisições, o Onetho espera e o card mostra quando vai tentar de novo.',
+  'whatsNew.fork.v010.note7':
+    'Subagentes nativos do Claude e do Codex não ficam mais em execução no quadro de orquestração depois de terminar.',
+  'whatsNew.fork.v010.note8':
+    'O Onetho substitui o Alethe nos textos fixos que faltavam, e os repositórios clonados no app vão para ~/Onetho.',
+  'whatsNew.fork.v010.note9':
+    'Tempos relativos de menos de uma hora agora aparecem corretos em chinês simplificado.',
   'rightSidebar.backToTodo': 'Voltar para Todo',
   'rightSidebar.markdownError': 'Não foi possível carregar o Markdown',
   'rightSidebar.navigation': 'Navegação da sidebar direita',
