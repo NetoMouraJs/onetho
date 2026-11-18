@@ -48,7 +48,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: lts/*
+          # Same Node version as ci.yml.
+          node-version: 24
           cache: npm
           cache-dependency-path: package-lock.json
 
