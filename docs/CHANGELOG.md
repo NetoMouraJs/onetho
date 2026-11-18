@@ -10,6 +10,7 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
 
 ## [Unreleased]
 
+- **Testing guide.** Added `docs/TESTING.md` (pt-BR): feature inventory, test stack comparison (Vitest/mockIPC vs Playwright vs WebdriverIO vs cargo), PTY/agent testing strategy, coverage matrix, and optional smoke tests (mockIPC, Playwright stub, PTY integration).
 - **Dev diagnostics.** A local dashboard traces Claude and Codex usage refreshes and frontend failures with correlation IDs, timing and safe error categories.
 - **Dev diagnostic details.** Failed events can show a sanitized frontend stack and their full event ID.
 

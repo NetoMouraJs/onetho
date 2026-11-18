@@ -2229,4 +2229,43 @@ mod tests {
         carry.extend_from_slice(&full[2..]); // + 0xA9
         assert_eq!(valid_utf8_prefix_len(&carry), carry.len());
     }
+
+    /// Smoke integration: real PTY via `portable-pty` (same stack as `spawn_pty`).
+    /// Documents the pattern for future spawn/write/read/resize/kill coverage.
+    #[test]
+    fn integration_spawn_sh_emits_expected_bytes() {
+        use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+        use std::io::Read;
+        use std::thread;
+        use std::time::Duration;
+
+        let pty_system = native_pty_system();
+        let pair = pty_system
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+        let mut cmd = CommandBuilder::new("sh");
+        cmd.arg("-c");
+        cmd.arg("printf onetho-pty-smoke");
+        let mut child = pair
+            .slave
+            .spawn_command(cmd)
+            .expect("spawn sh");
+        drop(pair.slave);
+
+        let mut reader = pair.master.try_clone_reader().expect("pty reader");
+        thread::sleep(Duration::from_millis(250));
+        let mut buf = [0u8; 64];
+        let n = reader.read(&mut buf).expect("read pty output");
+        let out = String::from_utf8_lossy(&buf[..n]);
+        assert!(
+            out.contains("onetho-pty-smoke"),
+            "unexpected PTY output: {out:?}"
+        );
+        let _ = child.kill();
+    }
 }
