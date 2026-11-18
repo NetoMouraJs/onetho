@@ -9,125 +9,127 @@ export type SpeechModelManifest = {
   sampleRate: number
   sizeBytes: number
   recommended: boolean
+  kind: 'download' | 'native'
+
+  capability?: 'stt' | 'tts'
+
+  source?: 'catalog' | 'huggingface'
+  hub?: HubModelInfo
 }
 
 export type SpeechModelState = {
   id: string
-  status: 'not-downloaded' | 'downloading' | 'ready' | 'error' | string
+  status: 'not-downloaded' | 'downloading' | 'paused' | 'ready' | 'error' | string
   progress?: number | null
   error?: string | null
+  downloadedBytes?: number | null
+  totalBytes?: number | null
 }
+
+export const DOWNLOAD_PAUSED = 'speech_download_paused'
+
+export const DOWNLOAD_BUSY = 'speech_download_busy'
 
 export type SpeechDownloadProgress = {
   modelId: string
   downloaded: number
   total: number
   fraction: number
+
+  phase: 'downloading' | 'verifying' | 'unpacking' | 'paused'
+  file: string
+
+  fileIndex: number
+  fileCount: number
 }
 
-export type SpeechInputDevice = {
-  deviceId: string
-  label: string
-  isDefault: boolean
+export type HubFamily =
+  | 'vits'
+  | 'kokoro'
+  | 'kitten'
+  | 'transducer'
+  | 'nemo-transducer'
+  | 'whisper'
+  | 'moonshine'
+  | 'sense-voice'
+  | 'paraformer'
+  | 'nemo-ctc'
+  | 'dolphin'
+
+export type HubModelInfo = {
+  repo: string
+
+  commit: string | null
+  family: HubFamily
+  languages: string[]
+  languageCount: number | null
+  multilingual: boolean
+
+  speed: number | null
+  accuracy: number | null
+  voiceCount: number | null
+  license: string | null
+  lastModified: string | null
+  likes: number
+  fileCount: number | null
+  totalBytes: number | null
+  kind: 'stt' | 'tts'
 }
 
-export type CapturedAudio = {
-  samples: number[]
-  sampleRate: number
-  peak: number
+export type HubSearchResult = { id: string; use: 'stt' | 'tts'; label: string; hub: HubModelInfo }
+export type HubSearchQuery = {
+  use: 'stt' | 'tts' | null
+  query: string
+  language: string | null
+  sort: 'likes' | 'recent'
+  offset: number
+}
+export type HubSearchPage = { results: HubSearchResult[]; hasMore: boolean }
+
+export const HUB_ERROR = {
+  offline: 'hub_offline',
+  rateLimited: 'hub_rate_limited',
+  unavailable: 'hub_unavailable',
+  badResponse: 'hub_bad_response',
+  incompatible: 'hub_incompatible',
+  tooLarge: 'hub_too_large',
+  gated: 'hub_gated',
+  unknownRepo: 'hub_unknown_repo',
+} as const
+
+export async function speechHubSearch(query: HubSearchQuery): Promise<HubSearchPage> {
+  return invoke('speech_hub_search', { query })
+}
+
+export async function speechHubResolve(repo: string): Promise<HubSearchResult> {
+  return invoke('speech_hub_resolve', { repo })
 }
 
 export async function speechListModels(): Promise<SpeechModelManifest[]> {
   return invoke('speech_list_models')
 }
 
-export async function speechListInputDevices(): Promise<SpeechInputDevice[]> {
-  return invoke('speech_list_input_devices')
+export async function speechModelStates(locale?: string | null): Promise<SpeechModelState[]> {
+  return invoke('speech_model_states', { locale: locale ?? null })
 }
 
-export async function speechModelStates(): Promise<SpeechModelState[]> {
-  return invoke('speech_model_states')
+export async function speechDownloadModel(
+  modelId: string,
+  locale?: string | null,
+): Promise<SpeechModelState> {
+  return invoke('speech_download_model', { modelId, locale: locale ?? null })
 }
 
-export async function speechDownloadModel(modelId: string): Promise<SpeechModelState> {
-  return invoke('speech_download_model', { modelId })
+export async function speechPauseDownload(modelId: string): Promise<boolean> {
+  return invoke('speech_pause_download', { modelId })
+}
+
+export async function speechCancelDownload(modelId: string): Promise<void> {
+  await invoke('speech_cancel_download', { modelId })
 }
 
 export async function speechDeleteModel(modelId: string): Promise<void> {
   await invoke('speech_delete_model', { modelId })
-}
-
-/** Start native mic capture (cpal). Pass null for the system default device. */
-export async function speechStartCapture(deviceId: string | null): Promise<void> {
-  await invoke('speech_start_capture', { deviceId })
-}
-
-/** Peak amplitude (0..1) of the most recent captured block; 0 when not recording. */
-export async function speechCaptureLevel(): Promise<number> {
-  return invoke('speech_capture_level')
-}
-
-export type VadStatus = {
-  level: number
-  voice: boolean
-  heardMs: number
-  silenceMs: number
-  segments: number
-}
-
-export async function speechVadStatus(): Promise<VadStatus | null> {
-  return invoke('speech_vad_status')
-}
-
-export async function speechPrepareVad(): Promise<boolean> {
-  return invoke('speech_prepare_vad')
-}
-
-export async function speechStopCapture(): Promise<CapturedAudio> {
-  return invoke('speech_stop_capture')
-}
-
-/** Stop native capture and run on-device STT in one round-trip. */
-export async function speechPrepare(modelId: string): Promise<boolean> {
-  return invoke('speech_prepare', { modelId })
-}
-
-/**
- * Decode only the audio recorded since the previous partial call and return the
- * accumulated transcript. Errors when the backend has no partial support.
- */
-export async function speechTranscribePartial(modelId: string): Promise<string> {
-  return invoke('speech_transcribe_partial', { modelId })
-}
-
-export async function speechStopAndTranscribe(modelId: string): Promise<string> {
-  return invoke('speech_stop_and_transcribe', { modelId })
-}
-
-export async function speechStopAndTranscribeCloud(apiKey: string, model: string): Promise<string> {
-  return invoke('speech_stop_and_transcribe_cloud', { apiKey, model })
-}
-
-export type Transcriber = {
-  provider: 'local' | 'openrouter'
-  modelId: string
-  cloudModel: string
-  apiKey: string
-}
-
-export async function stopAndTranscribe(transcriber: Transcriber): Promise<string> {
-  return transcriber.provider === 'openrouter'
-    ? speechStopAndTranscribeCloud(transcriber.apiKey, transcriber.cloudModel)
-    : speechStopAndTranscribe(transcriber.modelId)
-}
-
-export async function speechTranscribe(
-  modelId: string,
-  samples: Float32Array | number[],
-  sampleRate: number,
-): Promise<string> {
-  const payload = Array.from(samples)
-  return invoke('speech_transcribe', { modelId, samples: payload, sampleRate })
 }
 
 export async function onSpeechDownloadProgress(
@@ -136,4 +138,8 @@ export async function onSpeechDownloadProgress(
   return listen<SpeechDownloadProgress>('speech://download-progress', (event) => {
     handler(event.payload)
   })
+}
+
+export async function speechCaptureLevel(): Promise<number> {
+  return invoke('speech_capture_level')
 }

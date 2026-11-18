@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
+import { backupNotes, exportProfileState } from '../../lib/backup'
 import { saveFile } from '../../lib/dialog'
 import { intlLocale, useT } from '../../lib/i18n'
 import { isOrchestratorShellPty } from '../../lib/orchestratorShells'
@@ -23,7 +24,6 @@ import {
 import {
   createProfile,
   deleteProfile,
-  exportProfileBackup,
   listProfileSummaries,
   type ProfileSummary,
   renameProfile,
@@ -31,8 +31,8 @@ import {
   suspendPty,
 } from '../../lib/tauri'
 import { useProjectsStore } from '../../stores/projectsStore'
-import { useTerminalsStore } from '../../stores/terminalsStore'
 import { useUiStore } from '../../stores/uiStore'
+import { ToolingManifestPanel } from '../ToolingManifestPanel'
 import { Avatar } from '../ui/Avatar'
 import controls from './controls.module.css'
 import { Modal } from './Modal'
@@ -54,12 +54,11 @@ export function ProfilesModal() {
   const open = useUiStore((s) => s.openModal === 'profiles')
   const closeModal = useUiStore((s) => s.closeModal)
   const profiles = useProjectsStore((s) => s.profiles)
-  const hydrate = useProjectsStore((s) => s.hydrate)
   const activeProfileId = useProjectsStore((s) => s.activeProfileId)
   const projects = useProjectsStore((s) => s.projects)
   const preferences = useProjectsStore((s) => s.preferences)
   const language = useProjectsStore((s) => s.preferences.language)
-  const resetTerminalRuntime = useTerminalsStore((s) => s.reset)
+  const setPreferences = useProjectsStore((s) => s.setPreferences)
 
   const [summaries, setSummaries] = useState<ProfileSummary[]>([])
   const [newName, setNewName] = useState('')
@@ -150,16 +149,6 @@ export function ProfilesModal() {
 
   const reload = () => window.location.reload()
 
-  const applyProfileSwitch = async () => {
-    // Clear runtime-only PTY records before replacing the persisted document.
-    // Suspended PTYs remain available in the backend and are reattached when
-    // the profile is selected again.
-    resetTerminalRuntime()
-    await hydrate()
-    setNotice(null)
-    closeModal()
-  }
-
   const create = async () => {
     const trimmed = newName.trim()
     if (!trimmed) {
@@ -197,7 +186,10 @@ export function ProfilesModal() {
     try {
       await parkCurrentProfile()
       await setActiveProfile(profile.id)
-      await applyProfileSwitch()
+      // Plugins and stores hydrated from the previous profile would otherwise write their
+      // in-memory state into the new one. Reloading re-reads everything, as create and delete do;
+      // this profile's terminals were already parked above.
+      reload()
     } catch (err) {
       setBusy(null)
       setError(t('profiles.switchError', { error: String(err) }))
@@ -233,9 +225,9 @@ export function ProfilesModal() {
         filters: [{ name: t('profiles.backupFileType'), extensions: ['zip'] }],
       })
       if (!targetPath) return
-      await exportProfileBackup(pendingDelete.id, targetPath)
+      const report = await exportProfileState(targetPath, pendingDelete.id)
       setBackupReady(true)
-      setNotice(t('profiles.backupReady'))
+      setNotice([t('profiles.backupReady'), backupNotes(report)].filter(Boolean).join(' '))
     } catch (err) {
       setError(mapError(err))
     } finally {
@@ -453,6 +445,21 @@ export function ProfilesModal() {
               })}
             </div>
           )}
+        </section>
+
+        <section className={styles.listSection}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <h3>{t('tooling.profileTitle')}</h3>
+              <p>{t('tooling.profileDescription')}</p>
+            </div>
+          </div>
+          <ToolingManifestPanel
+            scope="global"
+            repo={null}
+            manifest={preferences.toolingManifest}
+            onChange={(toolingManifest) => setPreferences({ toolingManifest })}
+          />
         </section>
 
         {activeProfile ? (

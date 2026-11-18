@@ -60,7 +60,7 @@ export type OrchestratorClaudeQuota = {
   isUsingOverage?: boolean
 }
 
-export type OrchestratorRouting = {
+type UsageRouting = {
   /**
    * `ignored` means the planner delegated into the strained side with the reading in hand;
    * `fallback` that the role asked for ran as its fallback role because `agent` was running out.
@@ -69,10 +69,20 @@ export type OrchestratorRouting = {
   agent: string
   window: string
   used: number
-  /** Set on a `fallback`: the role asked for and the role it ran as. */
-  from?: string
-  to?: string
 }
+
+export type OrchestratorRouting =
+  | (UsageRouting &
+      (
+        | { verdict: 'chosen' | 'ignored' }
+        /** Set on a `fallback`: the role asked for and the role it ran as. */
+        | { verdict: 'fallback'; from?: string; to?: string }
+      ))
+  | {
+      verdict: 'rule'
+      rule?: string
+      role: string
+    }
 
 export type OrchestratorJob = {
   id: string
@@ -199,6 +209,21 @@ export type CodexModelOption = {
 
 export async function orchestratorCodexModels(): Promise<CodexModelOption[]> {
   return invoke<CodexModelOption[]>('orchestrator_codex_models')
+}
+
+export type SkillPlaybooks = {
+  text: string
+  path: string
+  /** False while the skill still plans with its bundled playbooks. */
+  custom: boolean
+}
+
+export async function orchestratorPlaybooks(): Promise<SkillPlaybooks> {
+  return invoke<SkillPlaybooks>('orchestrator_playbooks')
+}
+
+export async function orchestratorSavePlaybooks(text: string): Promise<SkillPlaybooks> {
+  return invoke<SkillPlaybooks>('orchestrator_save_playbooks', { text })
 }
 
 /**

@@ -1,6 +1,4 @@
-// Listener da POC do canvas de subagents (Fase 1).
-//
-// O Claude Code dispara hooks `SubagentStart`/`SubagentStop` como POST HTTP
+// Receives agent hooks and orchestration requests over authenticated local HTTP.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -58,7 +56,7 @@ fn wait_for_listener_port() -> Option<u16> {
 #[tauri::command]
 pub fn agent_hooks_endpoint() -> Result<String, String> {
     let port = wait_for_listener_port()
-        .ok_or_else(|| "listener de agents ainda nao esta disponivel".to_string())?;
+        .ok_or_else(|| "the agent listener is not available yet".to_string())?;
     Ok(listener_endpoint(port))
 }
 
@@ -86,6 +84,28 @@ pub fn agent_canvas_mirror() -> Option<String> {
     CANVAS_MIRROR.lock().ok().and_then(|slot| slot.clone())
 }
 
+const HOOK_TIMEOUT_SECS: u64 = 5;
+/// Claude waits on this hook while a voice conversation decides; Alethe answers it itself at
+/// `PERMISSION_HOLD` (290 s), before this timeout, because what Claude does on a hook timeout is
+/// undocumented.
+const PERMISSION_HOOK_TIMEOUT_SECS: u64 = 300;
+
+const ORCHESTRATOR_EVENTS: [&str; 8] = [
+    "SubagentStart",
+    "SubagentStop",
+    "PreToolUse",
+    "PostToolUse",
+    "TeammateIdle",
+    "TaskCreated",
+    "TaskCompleted",
+    // Lists what is still running when a turn ends, which is how the board notices a background
+    // worker whose own end event never came. `/hook` answers with an empty body, so this never
+    // blocks the agent from stopping.
+    "Stop",
+];
+
+const VOICE_EVENTS: [&str; 4] = ["PreToolUse", "PostToolUse", "Stop", "PermissionRequest"];
+
 fn planner_id_is_header_safe(planner_id: &str) -> bool {
     !planner_id.is_empty()
         && planner_id
@@ -93,21 +113,33 @@ fn planner_id_is_header_safe(planner_id: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | ':' | '-'))
 }
 
-fn claude_hooks_settings(
+/// The hook entries for one Claude terminal. Events present only because of `voice` carry
+/// `X-Alethe-Voice-Only`, so the orchestrator board can ignore them.
+fn build_hooks(
     endpoint: &str,
     token: &str,
     planner_id: &str,
     orchestrator: bool,
-) -> serde_json::Value {
+    voice: bool,
+) -> serde_json::Map<String, serde_json::Value> {
     let url = format!("{endpoint}/hook");
-    let hook = serde_json::json!([
-        { "hooks": [ {
-            "type": "http",
-            "url": url,
-            "timeout": 5,
-            "headers": { "X-Alethe-Token": token, "X-Alethe-Planner": planner_id }
-        } ] }
-    ]);
+    let entry = |timeout: u64, voice_only: bool| {
+        let mut headers = serde_json::json!({
+            "X-Alethe-Token": token,
+            "X-Alethe-Planner": planner_id,
+        });
+        if voice_only {
+            headers["X-Alethe-Voice-Only"] = serde_json::Value::String("1".to_string());
+        }
+        serde_json::json!([
+            { "hooks": [ {
+                "type": "http",
+                "url": url,
+                "timeout": timeout,
+                "headers": headers
+            } ] }
+        ])
+    };
 
     let mut hooks = serde_json::Map::new();
     // Claude Code skips http handlers on SessionStart, so curl posts the same stdin payload.
@@ -132,37 +164,364 @@ fn claude_hooks_settings(
                         "--data-binary", "@-",
                         url
                     ],
-                    "timeout": 5
+                    "timeout": HOOK_TIMEOUT_SECS
                 } ] }
             ]),
         );
     }
-    hooks.insert("UserPromptSubmit".to_string(), hook.clone());
+    hooks.insert("UserPromptSubmit".to_string(), entry(HOOK_TIMEOUT_SECS, false));
+    if orchestrator {
+        for event in ORCHESTRATOR_EVENTS {
+            hooks.insert(event.to_string(), entry(HOOK_TIMEOUT_SECS, false));
+        }
+    }
+    if voice {
+        for event in VOICE_EVENTS {
+            if hooks.contains_key(event) {
+                continue;
+            }
+            let timeout = if event == "PermissionRequest" {
+                PERMISSION_HOOK_TIMEOUT_SECS
+            } else {
+                HOOK_TIMEOUT_SECS
+            };
+            hooks.insert(event.to_string(), entry(timeout, true));
+        }
+    }
+    hooks
+}
 
+fn claude_hooks_settings(
+    endpoint: &str,
+    token: &str,
+    planner_id: &str,
+    orchestrator: bool,
+    voice: bool,
+) -> serde_json::Value {
+    let hooks = build_hooks(endpoint, token, planner_id, orchestrator, voice);
     let mut settings = serde_json::Map::new();
     if orchestrator {
         settings.insert(
             "teammateMode".to_string(),
             serde_json::Value::String("in-process".to_string()),
         );
-        for event in [
-            "SubagentStart",
-            "SubagentStop",
-            "PreToolUse",
-            "PostToolUse",
-            "TeammateIdle",
-            "TaskCreated",
-            "TaskCompleted",
-            // Lists what is still running when a turn ends, which is how the board notices a
-            // background worker whose own end event never came. `/hook` answers with an empty
-            // body, so this never blocks the agent from stopping.
-            "Stop",
-        ] {
-            hooks.insert(event.to_string(), hook.clone());
-        }
     }
     settings.insert("hooks".to_string(), serde_json::Value::Object(hooks));
     serde_json::Value::Object(settings)
+}
+
+// Hook fields are untrusted too, so diagnostics retain only the received byte count.
+fn hook_log_line(body: &str) -> String {
+    format!(
+        "[agent_events] hook received ({} bytes; payload redacted)",
+        body.len()
+    )
+}
+
+/// How long a `PermissionRequest` is held for a voice answer before Alethe answers it with no
+/// decision, which makes Claude show its own prompt.
+const PERMISSION_HOLD: Duration = Duration::from_secs(290);
+const PERMISSION_RELEASED_EVENT: &str = "agent-permission://released";
+
+/// Answers a held hook request. `None` is an empty 200: no decision.
+pub(crate) trait PermissionResponder: Send {
+    fn answer(self: Box<Self>, body: Option<String>);
+}
+
+impl PermissionResponder for tiny_http::Request {
+    fn answer(self: Box<Self>, body: Option<String>) {
+        let result = match body {
+            Some(body) => {
+                let header = tiny_http::Header::from_bytes("Content-Type", "application/json")
+                    .expect("static header");
+                (*self).respond(tiny_http::Response::from_string(body).with_header(header))
+            }
+            None => (*self).respond(tiny_http::Response::empty(200)),
+        };
+        if let Err(error) = result {
+            eprintln!("[agent_events] permission answer failed: {error}");
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PermissionBehavior {
+    Allow,
+    Deny,
+    Defer,
+}
+
+impl PermissionBehavior {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "allow" => Ok(Self::Allow),
+            "deny" => Ok(Self::Deny),
+            "defer" => Ok(Self::Defer),
+            other => Err(format!("unknown permission behavior: {other}")),
+        }
+    }
+}
+
+/// The `PermissionRequest` hook output Claude Code reads (code.claude.com/docs/en/hooks).
+fn permission_decision_body(behavior: PermissionBehavior, message: Option<&str>) -> Option<String> {
+    let mut decision = match behavior {
+        PermissionBehavior::Defer => return None,
+        PermissionBehavior::Allow => serde_json::json!({ "behavior": "allow" }),
+        PermissionBehavior::Deny => serde_json::json!({ "behavior": "deny" }),
+    };
+    if behavior == PermissionBehavior::Deny {
+        if let Some(message) = message.map(str::trim).filter(|m| !m.is_empty()) {
+            decision["message"] = serde_json::Value::String(message.to_string());
+        }
+    }
+    Some(
+        serde_json::json!({
+            "hookSpecificOutput": { "hookEventName": "PermissionRequest", "decision": decision }
+        })
+        .to_string(),
+    )
+}
+
+struct HeldPermission {
+    planner: String,
+    deadline: Instant,
+    responder: Box<dyn PermissionResponder>,
+}
+
+/// Permission requests waiting for a voice or panel answer. The listener loop is serial, so a
+/// request is parked here instead of blocking every other hook while the person decides.
+#[derive(Default)]
+pub(crate) struct PendingPermissions {
+    held: std::sync::Mutex<std::collections::HashMap<String, HeldPermission>>,
+    targets: std::sync::Mutex<std::collections::HashSet<String>>,
+}
+
+impl PendingPermissions {
+    pub(crate) fn is_target(&self, planner: &str) -> bool {
+        self.targets
+            .lock()
+            .map(|targets| targets.contains(planner))
+            .unwrap_or(false)
+    }
+
+    /// Replaces the voice targets and releases what was held for a terminal that left them.
+    pub(crate) fn set_targets(&self, planners: Vec<String>) -> Vec<String> {
+        let next: std::collections::HashSet<String> = planners.into_iter().collect();
+        if let Ok(mut targets) = self.targets.lock() {
+            *targets = next.clone();
+        }
+        self.release_where(|held| !next.contains(&held.planner))
+    }
+
+    pub(crate) fn hold(
+        &self,
+        planner: String,
+        responder: Box<dyn PermissionResponder>,
+        now: Instant,
+    ) -> String {
+        let id = nanoid::nanoid!(16);
+        let held = HeldPermission {
+            planner,
+            deadline: now + PERMISSION_HOLD,
+            responder,
+        };
+        match self.held.lock() {
+            Ok(mut map) => {
+                map.insert(id.clone(), held);
+            }
+            Err(_) => held.responder.answer(None),
+        }
+        id
+    }
+
+    pub(crate) fn decide(
+        &self,
+        id: &str,
+        behavior: PermissionBehavior,
+        message: Option<&str>,
+    ) -> Result<(), String> {
+        let held = self
+            .held
+            .lock()
+            .map_err(|_| "the permission map is poisoned".to_string())?
+            .remove(id)
+            .ok_or_else(|| format!("no pending permission request {id}"))?;
+        held.responder.answer(permission_decision_body(behavior, message));
+        Ok(())
+    }
+
+    pub(crate) fn release_expired(&self, now: Instant) -> Vec<String> {
+        self.release_where(|held| held.deadline <= now)
+    }
+
+    pub(crate) fn release_all(&self) -> Vec<String> {
+        self.release_where(|_| true)
+    }
+
+    /// Answers outside the lock, so a slow socket never blocks a concurrent decide.
+    fn release_where(&self, mut predicate: impl FnMut(&HeldPermission) -> bool) -> Vec<String> {
+        let released: Vec<(String, HeldPermission)> = match self.held.lock() {
+            Ok(mut map) => {
+                let ids: Vec<String> = map
+                    .iter()
+                    .filter(|(_, held)| predicate(held))
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                ids.into_iter()
+                    .filter_map(|id| map.remove(&id).map(|held| (id, held)))
+                    .collect()
+            }
+            Err(_) => Vec::new(),
+        };
+        released
+            .into_iter()
+            .map(|(id, held)| {
+                held.responder.answer(None);
+                id
+            })
+            .collect()
+    }
+}
+
+fn pending_permissions() -> &'static PendingPermissions {
+    static PENDING: OnceLock<PendingPermissions> = OnceLock::new();
+    PENDING.get_or_init(PendingPermissions::default)
+}
+
+fn emit_released(app: &AppHandle, ids: &[String], reason: &str) {
+    for id in ids {
+        let _ = app.emit(
+            PERMISSION_RELEASED_EVENT,
+            serde_json::json!({ "requestId": id, "reason": reason }),
+        );
+    }
+}
+
+/// Every window can call every custom command (no app manifest in build.rs), so commands that
+/// answer for the person check who is calling.
+fn require_main_window(label: &str) -> Result<(), String> {
+    if label == "main" {
+        Ok(())
+    } else {
+        Err(format!("window {label} may not answer agent permissions"))
+    }
+}
+
+#[tauri::command]
+pub fn agent_permission_decide(
+    webview: tauri::WebviewWindow,
+    request_id: String,
+    behavior: String,
+    message: Option<String>,
+) -> Result<(), String> {
+    require_main_window(webview.label())?;
+    let behavior = PermissionBehavior::parse(&behavior)?;
+    pending_permissions().decide(&request_id, behavior, message.as_deref())
+}
+
+#[tauri::command]
+pub fn voice_set_targets(
+    app: AppHandle,
+    webview: tauri::WebviewWindow,
+    pty_ids: Vec<String>,
+) -> Result<(), String> {
+    require_main_window(webview.label())?;
+    let released = pending_permissions().set_targets(pty_ids);
+    emit_released(&app, &released, "untargeted");
+    Ok(())
+}
+
+/// The PTYs whose last hook settings file carried the voice hooks. A Claude launched before voice
+/// was turned on has no PermissionRequest/Stop hooks, so voice must not target it. Lives in Rust so
+/// it survives a webview reload.
+#[derive(Default)]
+pub(crate) struct VoiceHookedPtys {
+    planners: std::sync::Mutex<std::collections::HashSet<String>>,
+}
+
+impl VoiceHookedPtys {
+    pub(crate) fn note(&self, planner: &str, voice: bool) {
+        if let Ok(mut planners) = self.planners.lock() {
+            if voice {
+                planners.insert(planner.to_string());
+            } else {
+                planners.remove(planner);
+            }
+        }
+    }
+
+    pub(crate) fn list(&self) -> Vec<String> {
+        let mut planners: Vec<String> = self
+            .planners
+            .lock()
+            .map(|planners| planners.iter().cloned().collect())
+            .unwrap_or_default();
+        planners.sort();
+        planners
+    }
+}
+
+fn voice_hooked_ptys() -> &'static VoiceHookedPtys {
+    static HOOKED: OnceLock<VoiceHookedPtys> = OnceLock::new();
+    HOOKED.get_or_init(VoiceHookedPtys::default)
+}
+
+#[tauri::command]
+pub fn agent_voice_hooked_ptys() -> Vec<String> {
+    voice_hooked_ptys().list()
+}
+
+/// Called on exit: Claude shows its own prompt instead of waiting on a closed app.
+pub fn release_all_permissions(app: &AppHandle) {
+    emit_released(app, &pending_permissions().release_all(), "shutdown");
+}
+
+#[derive(Default)]
+struct HookSettingsFiles {
+    paths: std::collections::HashSet<PathBuf>,
+    closing: bool,
+}
+
+impl HookSettingsFiles {
+    fn write(&mut self, path: &Path, body: &[u8]) -> Result<(), String> {
+        if self.closing {
+            return Err("the agent hook settings are shutting down".to_string());
+        }
+        write_private_file(path, body)?;
+        self.paths.insert(path.to_path_buf());
+        Ok(())
+    }
+
+    fn cleanup(&mut self) -> Result<(), String> {
+        self.closing = true;
+        self.paths.retain(|path| match std::fs::remove_file(path) {
+            Ok(()) => false,
+            Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+        });
+        if self.paths.is_empty() {
+            return Ok(());
+        }
+        Err(format!(
+            "could not remove {} agent hook settings files",
+            self.paths.len()
+        ))
+    }
+}
+
+fn hook_settings_files() -> &'static std::sync::Mutex<HookSettingsFiles> {
+    static FILES: OnceLock<std::sync::Mutex<HookSettingsFiles>> = OnceLock::new();
+    FILES.get_or_init(|| std::sync::Mutex::new(HookSettingsFiles::default()))
+}
+
+// Track only this process's files; ADR-013 explains why cleanup never scans shared folders.
+pub fn cleanup_settings_files() {
+    let result = hook_settings_files()
+        .lock()
+        .map_err(|_| "the agent hook settings lock is poisoned".to_string())
+        .and_then(|mut files| files.cleanup());
+    if let Err(error) = result {
+        let _ = crate::logging::record_app_event("agent.hooks.cleanup".to_string(), error);
+    }
 }
 
 #[tauri::command]
@@ -173,10 +532,11 @@ pub fn agent_hooks_settings_path(
     ai_memory_enabled: Option<bool>,
     ai_memory_port: Option<u16>,
     claude_usage: Option<bool>,
+    voice: Option<bool>,
 ) -> Result<String, String> {
     let orchestrator = orchestrator.unwrap_or(true);
     let port = wait_for_listener_port()
-        .ok_or_else(|| "listener de agents ainda nao esta disponivel".to_string())?;
+        .ok_or_else(|| "the agent listener is not available yet".to_string())?;
     let endpoint = listener_endpoint(port);
     // Namespaced by port and planner so each Claude terminal gets its own file and its hooks carry
     // the id back, the same way the orchestrator MCP config does per terminal.
@@ -184,11 +544,18 @@ pub fn agent_hooks_settings_path(
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
         .collect();
-    let variant = if orchestrator { "full" } else { "session" };
+    let voice = voice.unwrap_or(false);
+    let variant = match (orchestrator, voice) {
+        (true, false) => "full",
+        (true, true) => "full-voice",
+        (false, false) => "session",
+        (false, true) => "session-voice",
+    };
     let path = hook_settings_dir()?.join(format!(
         "alethe-agent-hooks-{port}-{variant}-{safe_planner}.json"
     ));
-    let mut settings = claude_hooks_settings(&endpoint, init_token(), &planner_id, orchestrator);
+    let mut settings =
+        claude_hooks_settings(&endpoint, init_token(), &planner_id, orchestrator, voice);
     // Capture rides in the same file, so one writer owns it and the scope is this terminal.
     // `merge_hooks` refuses an unfamiliar shape rather than writing a broken file.
     let ai_port = ai_memory_port.unwrap_or(crate::ai_memory::DEFAULT_PORT);
@@ -210,9 +577,13 @@ pub fn agent_hooks_settings_path(
         }
     }
     let body = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-    write_private_file(&path, body.as_bytes())?;
+    hook_settings_files()
+        .lock()
+        .map_err(|_| "the agent hook settings lock is poisoned".to_string())?
+        .write(&path, body.as_bytes())?;
+    voice_hooked_ptys().note(&planner_id, voice);
     eprintln!(
-        "[agent_events] hooks settings escrito em {}",
+        "[agent_events] hooks settings written to {}",
         path.display()
     );
     Ok(path.to_string_lossy().to_string())
@@ -276,6 +647,86 @@ fn write_private_file(path: &Path, body: &[u8]) -> Result<(), String> {
         let _ = std::fs::remove_file(&temporary);
     }
     written.map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod settings_cleanup_tests {
+    use super::HookSettingsFiles;
+    use std::path::PathBuf;
+
+    fn scratch() -> PathBuf {
+        let directory =
+            std::env::temp_dir().join(format!("alethe-hooks-cleanup-{}", nanoid::nanoid!(8)));
+        std::fs::create_dir(&directory).unwrap();
+        directory
+    }
+
+    #[test]
+    fn shutdown_removes_all_owned_variants_and_preserves_other_files() {
+        let directory = scratch();
+        let mut files = HookSettingsFiles::default();
+        let paths: Vec<_> = [
+            "full-planner1.json",
+            "session-planner2.json",
+            "full-voice-planner1.json",
+        ]
+        .iter()
+        .map(|name| directory.join(name))
+        .collect();
+        for path in &paths {
+            files.write(path, b"first").unwrap();
+        }
+        files.write(&paths[0], b"updated").unwrap();
+        assert_eq!(std::fs::read(&paths[0]).unwrap(), b"updated");
+        let unrelated = directory.join("another-process.json");
+        std::fs::write(&unrelated, b"keep").unwrap();
+        std::fs::remove_file(&paths[1]).unwrap();
+
+        files.cleanup().unwrap();
+        files.cleanup().unwrap();
+
+        assert!(paths.iter().all(|path| !path.exists()));
+        assert!(files.paths.is_empty());
+        assert_eq!(std::fs::read(&unrelated).unwrap(), b"keep");
+        std::fs::remove_file(unrelated).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn cleanup_retries_failed_removals_on_the_next_exit_event() {
+        let directory = scratch();
+        let path = directory.join("settings.json");
+        let mut files = HookSettingsFiles::default();
+        files.write(&path, b"settings").unwrap();
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+
+        assert!(files.cleanup().is_err());
+        assert!(files.paths.contains(&path));
+        std::fs::remove_dir(&path).unwrap();
+        std::fs::write(&path, b"settings").unwrap();
+        files.cleanup().unwrap();
+
+        assert!(!path.exists());
+        assert!(files.paths.is_empty());
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn failed_and_late_writes_do_not_leave_untracked_settings() {
+        let directory = scratch();
+        let mut files = HookSettingsFiles::default();
+        let missing_parent = directory.join("missing").join("settings.json");
+        assert!(files.write(&missing_parent, b"settings").is_err());
+        assert!(files.paths.is_empty());
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
+
+        files.cleanup().unwrap();
+        let late = directory.join("late.json");
+        assert!(files.write(&late, b"settings").is_err());
+        assert!(!late.exists());
+        std::fs::remove_dir(directory).unwrap();
+    }
 }
 
 #[cfg(all(test, unix))]
@@ -409,7 +860,7 @@ fn write_codex_mcp_bridge(port: u16) -> Result<PathBuf, String> {
 
 fn codex_mcp_config_write_inner(repo: String, _planner_id: String) -> Result<(), String> {
     let port = wait_for_listener_port()
-        .ok_or_else(|| "listener de agents ainda nao esta disponivel".to_string())?;
+        .ok_or_else(|| "the agent listener is not available yet".to_string())?;
     let script_path = write_codex_mcp_bridge(port)?;
 
     let root = crate::git_control::repository_root(&repo)?;
@@ -476,9 +927,105 @@ pub async fn codex_mcp_config_write(
         .map_err(|error| format!("codex_mcp_config_write: falha na task bloqueante: {error}"))?
 }
 
+const CODEX_HOOK_FORWARDER: &str = "alethe-codex-hook-forward-";
+
+struct TomlSection<'a> {
+    header: Option<&'a str>,
+    lines: Vec<&'a str>,
+}
+
+fn split_toml_sections(body: &str) -> Vec<TomlSection<'_>> {
+    let mut sections = vec![TomlSection {
+        header: None,
+        lines: Vec::new(),
+    }];
+    for line in body.lines() {
+        if !line.trim_start().starts_with('[') {
+            sections.last_mut().expect("one section").lines.push(line);
+            continue;
+        }
+        let current = sections.last_mut().expect("one section");
+        let mut carried = Vec::new();
+        if current.header.is_some() {
+            let content_end = current
+                .lines
+                .iter()
+                .rposition(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'))
+                .map_or(0, |index| index + 1);
+            if let Some(comment_start) = current.lines[content_end..]
+                .iter()
+                .position(|l| l.trim_start().starts_with('#'))
+            {
+                carried = current.lines.split_off(content_end + comment_start);
+            }
+        }
+        carried.push(line);
+        sections.push(TomlSection {
+            header: Some(line.trim()),
+            lines: carried,
+        });
+    }
+    sections
+}
+
+// Releases before the managed markers appended a fresh hooks block on every Codex launch.
+fn strip_legacy_codex_hooks(body: &str) -> String {
+    let sections = split_toml_sections(body);
+    let mut kept: Vec<&str> = Vec::new();
+    let mut dropped = false;
+    let mut index = 0;
+    while index < sections.len() {
+        let event = sections[index]
+            .header
+            .and_then(|header| header.strip_prefix("[[hooks."))
+            .and_then(|rest| rest.strip_suffix("]]"))
+            .filter(|event| !event.contains('.'));
+        let Some(event) = event else {
+            kept.extend(&sections[index].lines);
+            index += 1;
+            continue;
+        };
+        let handler_header = format!("[[hooks.{event}.hooks]]");
+        let group_end = sections[index + 1..]
+            .iter()
+            .position(|section| {
+                !section
+                    .header
+                    .is_some_and(|header| header.starts_with(&format!("[[hooks.{event}.")))
+            })
+            .map_or(sections.len(), |offset| index + 1 + offset);
+        let handlers: Vec<&TomlSection> = sections[index + 1..group_end]
+            .iter()
+            .filter(|section| section.header == Some(handler_header.as_str()))
+            .collect();
+        let legacy = !handlers.is_empty()
+            && handlers.iter().all(|section| {
+                section
+                    .lines
+                    .iter()
+                    .any(|l| l.contains(CODEX_HOOK_FORWARDER))
+            });
+        if legacy {
+            dropped = true;
+        } else {
+            for section in &sections[index..group_end] {
+                kept.extend(&section.lines);
+            }
+        }
+        index = group_end;
+    }
+    let mut output = kept.join("\n");
+    if dropped {
+        while output.contains("\n\n\n") {
+            output = output.replace("\n\n\n", "\n\n");
+        }
+    }
+    output
+}
+
 fn codex_hooks_config_write_inner(repo: String, _planner_id: String) -> Result<(), String> {
     let port = wait_for_listener_port()
-        .ok_or_else(|| "listener de agents ainda nao esta disponivel".to_string())?;
+        .ok_or_else(|| "the agent listener is not available yet".to_string())?;
     let script_path = write_codex_hook_forwarder(port)?;
 
     let root = crate::git_control::repository_root(&repo)?;
@@ -508,7 +1055,7 @@ fn codex_hooks_config_write_inner(repo: String, _planner_id: String) -> Result<(
             kept_lines.push(line);
         }
     }
-    let mut body = kept_lines.join("\n");
+    let mut body = strip_legacy_codex_hooks(&kept_lines.join("\n"));
     if !body.is_empty() && !body.ends_with('\n') {
         body.push('\n');
     }
@@ -540,6 +1087,47 @@ pub async fn codex_hooks_config_write(repo: String, planner_id: String) -> Resul
         .map_err(|error| format!("codex_hooks_config_write: falha na task bloqueante: {error}"))?
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HookRoute {
+    Mcp,
+    Spawn,
+    Codex,
+    OpenCodeStatus,
+    Hook,
+    UsageClaude,
+}
+
+fn hook_route(method: &tiny_http::Method, url: &str) -> Result<HookRoute, u16> {
+    if method != &tiny_http::Method::Post {
+        return Err(405);
+    }
+    match url {
+        "/mcp" => Ok(HookRoute::Mcp),
+        "/spawn" => Ok(HookRoute::Spawn),
+        "/codex" => Ok(HookRoute::Codex),
+        "/opencode-status" => Ok(HookRoute::OpenCodeStatus),
+        "/hook" => Ok(HookRoute::Hook),
+        "/usage/claude" => Ok(HookRoute::UsageClaude),
+        _ => Err(404),
+    }
+}
+
+fn accept_hook_request(request: tiny_http::Request) -> Option<(tiny_http::Request, HookRoute)> {
+    let route = hook_route(request.method(), request.url()).and_then(|route| {
+        if check_token(&request) {
+            return Ok(route);
+        }
+        Err(401)
+    });
+    match route {
+        Ok(route) => Some((request, route)),
+        Err(status) => {
+            let _ = request.respond(tiny_http::Response::empty(status));
+            None
+        }
+    }
+}
+
 pub fn start_listener(app: AppHandle) {
     std::thread::spawn(move || {
         let mut last_error: Option<String> = None;
@@ -567,15 +1155,19 @@ pub fn start_listener(app: AppHandle) {
         };
 
         LISTENER_PORT.store(port, Ordering::SeqCst);
-        eprintln!("[agent_events] ouvindo em {}", listener_addr(port));
+        eprintln!("[agent_events] listening on {}", listener_addr(port));
 
-        for mut request in server.incoming_requests() {
-            let url = request.url().to_string();
+        let sweeper = app.clone();
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_secs(1));
+            let released = pending_permissions().release_expired(Instant::now());
+            emit_released(&sweeper, &released, "timeout");
+        });
 
-            if !check_token(&request) {
-                let _ = request.respond(tiny_http::Response::empty(401));
+        for request in server.incoming_requests() {
+            let Some((mut request, route)) = accept_hook_request(request) else {
                 continue;
-            }
+            };
 
             let mut body = String::new();
             if let Err(e) = request
@@ -588,11 +1180,7 @@ pub fn start_listener(app: AppHandle) {
                 continue;
             }
 
-            // processo real (claude/codex/opencode) via
-            // `curl -X POST /spawn -d '{"agent":"codex","task":"...","mode":"exec"}'`.
-            // O Alethe emite `agent-spawn`; o front sobe um PTY worker. Campos:
-
-            if url.starts_with("/mcp") {
+            if route == HookRoute::Mcp {
                 let planner = request
                     .headers()
                     .iter()
@@ -623,7 +1211,7 @@ pub fn start_listener(app: AppHandle) {
                 continue;
             }
 
-            if url.starts_with("/spawn") {
+            if route == HookRoute::Spawn {
                 match serde_json::from_str::<serde_json::Value>(&body) {
                     Ok(payload) => {
                         let agent = payload
@@ -652,7 +1240,10 @@ pub fn start_listener(app: AppHandle) {
                                 serde_json::Value::String(job_id.clone()),
                             );
                         }
-                        eprintln!("[agent_events] /spawn agent={agent} job_id={job_id}");
+                        let _ = crate::logging::record_app_event(
+                            "agent.spawn".to_string(),
+                            format!("accepted agent={agent}"),
+                        );
                         let _ = app.emit("agent-spawn", &event_payload);
                         let response = serde_json::json!({
                             "accepted": true,
@@ -679,7 +1270,7 @@ pub fn start_listener(app: AppHandle) {
 
             // Claude Code's status line JSON, relayed by `statusline_bridge`. Only its rate limits
             // are kept, and the body is never logged: it carries the session's paths.
-            if url.starts_with("/usage/claude") {
+            if route == HookRoute::UsageClaude {
                 let now_ms = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map_or(0.0, |elapsed| elapsed.as_millis() as f64);
@@ -695,10 +1286,8 @@ pub fn start_listener(app: AppHandle) {
                 continue;
             }
 
-            // Alias legado: o control plane antigo despacha texto cru pro codex
-
-            // emitindo agent-spawn com agent=codex.
-            if url.starts_with("/codex") {
+            // The legacy control plane sends raw Codex tasks through agent-spawn.
+            if route == HookRoute::Codex {
                 let task = body.trim().to_string();
                 eprintln!("[agent_events] /codex (legado) task ({} chars)", task.len());
                 let payload = serde_json::json!({ "agent": "codex", "task": task });
@@ -709,16 +1298,18 @@ pub fn start_listener(app: AppHandle) {
                 continue;
             }
 
-            // Bridge do plugin OpenCode (opencode_bridge.rs) — reporta
-            // working/idle real de sessoes OpenCode. Campos: directory
-
-            // state ("working" | "idle").
-            if url.starts_with("/opencode-status") {
+            // The OpenCode bridge reports the session directory and working/idle state.
+            if route == HookRoute::OpenCodeStatus {
                 match serde_json::from_str::<serde_json::Value>(&body) {
                     Ok(payload) => {
                         let _ = app.emit("opencode-bridge-status", &payload);
                     }
-                    Err(e) => eprintln!("[agent_events] /opencode-status payload inválido: {e}"),
+                    Err(_) => {
+                        let _ = crate::logging::record_app_event(
+                            "agent.opencode-status".to_string(),
+                            "invalid JSON payload ignored".to_string(),
+                        );
+                    }
                 }
                 let _ = request.respond(tiny_http::Response::empty(200));
                 continue;
@@ -726,28 +1317,14 @@ pub fn start_listener(app: AppHandle) {
 
             match serde_json::from_str::<serde_json::Value>(&body) {
                 Ok(mut payload) => {
-                    let get = |k: &str| {
-                        payload
-                            .get(k)
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("?")
-                            .to_owned()
-                    };
-                    eprintln!(
-                        "[agent_events] {} agent_id={} agent_type={}",
-                        get("hook_event_name"),
-                        get("agent_id"),
-                        get("agent_type"),
-                    );
-
                     // Which Claude terminal this fired from, so the frontend can hang the subagent
                     // off the same planner tree as its Codex delegations.
-                    if let Some(planner) = request
+                    let planner = request
                         .headers()
                         .iter()
                         .find(|h| h.field.equiv("X-Alethe-Planner"))
-                        .map(|h| h.value.as_str().to_string())
-                    {
+                        .map(|h| h.value.as_str().to_string());
+                    if let Some(planner) = planner.clone() {
                         if let Some(object) = payload.as_object_mut() {
                             object.insert(
                                 "plannerId".to_string(),
@@ -771,13 +1348,62 @@ pub fn start_listener(app: AppHandle) {
                         );
                     }
 
-                    let preview: String = body.chars().take(4000).collect();
-                    eprintln!("[agent_events] payload: {preview}");
-                    if let Err(e) = app.emit("agent-hook", &payload) {
-                        eprintln!("[agent_events] falha ao emitir agent-hook: {e}");
+                    if request
+                        .headers()
+                        .iter()
+                        .any(|h| h.field.equiv("X-Alethe-Voice-Only"))
+                    {
+                        if let Some(object) = payload.as_object_mut() {
+                            object.insert("voiceOnly".to_string(), serde_json::Value::Bool(true));
+                        }
+                    }
+
+                    let event_name = payload
+                        .get("hook_event_name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let _ = crate::logging::record_app_event(
+                        "agent.hook".to_string(),
+                        hook_log_line(&body),
+                    );
+                    if event_name == "PermissionRequest" {
+                        if let Some(planner) =
+                            planner.filter(|planner| pending_permissions().is_target(planner))
+                        {
+                            let id = pending_permissions().hold(
+                                planner,
+                                Box::new(request),
+                                Instant::now(),
+                            );
+                            if let Some(object) = payload.as_object_mut() {
+                                object.insert(
+                                    "permissionRequestId".to_string(),
+                                    serde_json::Value::String(id),
+                                );
+                            }
+                            if app.emit("agent-hook", &payload).is_err() {
+                                let _ = crate::logging::record_app_event(
+                                    "agent.hook".to_string(),
+                                    "could not emit agent-hook".to_string(),
+                                );
+                            }
+                            continue;
+                        }
+                    }
+                    if app.emit("agent-hook", &payload).is_err() {
+                        let _ = crate::logging::record_app_event(
+                            "agent.hook".to_string(),
+                            "could not emit agent-hook".to_string(),
+                        );
                     }
                 }
-                Err(e) => eprintln!("[agent_events] POST não-JSON ignorado: {e}"),
+                Err(_) => {
+                    let _ = crate::logging::record_app_event(
+                        "agent.hook".to_string(),
+                        "invalid JSON payload ignored".to_string(),
+                    );
+                }
             }
 
             let _ = request.respond(tiny_http::Response::empty(200));
@@ -787,13 +1413,120 @@ pub fn start_listener(app: AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{claude_hooks_settings, toml_string};
+    use super::{
+        build_hooks, claude_hooks_settings, hook_log_line, strip_legacy_codex_hooks, toml_string,
+        PERMISSION_HOOK_TIMEOUT_SECS,
+    };
 
     const ENDPOINT: &str = "http://127.0.0.1:9123";
 
+    const ROUTES: [(&str, super::HookRoute); 6] = [
+        ("/mcp", super::HookRoute::Mcp),
+        ("/spawn", super::HookRoute::Spawn),
+        ("/codex", super::HookRoute::Codex),
+        ("/opencode-status", super::HookRoute::OpenCodeStatus),
+        ("/hook", super::HookRoute::Hook),
+        ("/usage/claude", super::HookRoute::UsageClaude),
+    ];
+
+    #[test]
+    fn exact_post_routes_keep_their_handlers_including_mcp() {
+        for (url, route) in ROUTES {
+            assert_eq!(super::hook_route(&tiny_http::Method::Post, url), Ok(route));
+        }
+    }
+
+    #[test]
+    fn every_hook_server_route_rejects_non_post_methods() {
+        for method in [
+            tiny_http::Method::Get,
+            tiny_http::Method::Head,
+            tiny_http::Method::Put,
+            tiny_http::Method::Delete,
+            tiny_http::Method::Patch,
+            tiny_http::Method::Options,
+            tiny_http::Method::Connect,
+            tiny_http::Method::Trace,
+            "CUSTOM".parse().unwrap(),
+        ] {
+            for (url, _) in ROUTES {
+                assert_eq!(super::hook_route(&method, url), Err(405), "{method} {url}");
+            }
+        }
+    }
+
+    #[test]
+    fn prefix_lookalikes_and_unknown_routes_are_not_hook_routes() {
+        for (url, _) in ROUTES {
+            for suffix in ["-lookalike", "/child", "/", "?query=1"] {
+                let lookalike = format!("{url}{suffix}");
+                assert_eq!(
+                    super::hook_route(&tiny_http::Method::Post, &lookalike),
+                    Err(404),
+                    "{lookalike}"
+                );
+            }
+        }
+        for url in ["/", "/unknown", "/HOOK", "/%68ook"] {
+            assert_eq!(
+                super::hook_route(&tiny_http::Method::Post, url),
+                Err(404),
+                "{url}"
+            );
+        }
+    }
+
+
+    fn http_status(method: &str, url: &str, token: Option<&str>) -> u16 {
+        use std::io::{Read, Write};
+        use std::net::TcpStream;
+        use std::time::Duration;
+
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let mut client = TcpStream::connect(server.server_addr().to_ip().unwrap()).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let token_header = token
+            .map(|token| format!("x-alethe-token: {token}\r\n"))
+            .unwrap_or_default();
+        write!(client, "{method} {url} HTTP/1.1\r\nHost: localhost\r\n{token_header}Connection: close\r\nContent-Length: 0\r\n\r\n").unwrap();
+        let request = server
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .expect("HTTP request");
+        if let Some((request, _route)) = super::accept_hook_request(request) {
+            request.respond(tiny_http::Response::empty(200)).unwrap();
+        }
+        let mut response = String::new();
+        client.read_to_string(&mut response).unwrap();
+        response
+            .split_whitespace()
+            .nth(1)
+            .expect("HTTP status")
+            .parse()
+            .unwrap()
+    }
+
+    #[test]
+    fn real_http_requests_enforce_routes_methods_and_authentication() {
+        let token = super::init_token();
+        for (url, _) in ROUTES {
+            assert_eq!(http_status("POST", url, Some(token)), 200, "{url}");
+            assert_eq!(http_status("GET", url, Some(token)), 405, "{url}");
+            assert_eq!(
+                http_status("POST", &format!("{url}-lookalike"), Some(token)),
+                404,
+                "{url}"
+            );
+        }
+        assert_eq!(http_status("POST", "/hook", None), 401);
+        assert_eq!(http_status("POST", "/mcp", Some("wrong-token")), 401);
+    }
+
     #[test]
     fn session_start_runs_curl_directly_because_claude_skips_http_there() {
-        let settings = claude_hooks_settings(ENDPOINT, "tok_en-1", "pty-1", false);
+        let settings = claude_hooks_settings(ENDPOINT, "tok_en-1", "pty-1", false, false);
         let handler = &settings["hooks"]["SessionStart"][0]["hooks"][0];
         let args: Vec<&str> = handler["args"]
             .as_array()
@@ -811,7 +1544,7 @@ mod tests {
 
     #[test]
     fn every_other_event_keeps_the_http_handler() {
-        let settings = claude_hooks_settings(ENDPOINT, "token", "pty-1", true);
+        let settings = claude_hooks_settings(ENDPOINT, "token", "pty-1", true, false);
         let hooks = settings["hooks"].as_object().expect("hooks object");
 
         assert_eq!(settings["teammateMode"], "in-process");
@@ -827,11 +1560,116 @@ mod tests {
 
     #[test]
     fn a_planner_id_unsafe_for_a_header_drops_only_session_start() {
-        let settings = claude_hooks_settings(ENDPOINT, "token", "pty 1\r\nX-Evil: 1", false);
+        let settings = claude_hooks_settings(ENDPOINT, "token", "pty 1\r\nX-Evil: 1", false, false);
         let hooks = settings["hooks"].as_object().expect("hooks object");
 
         assert!(!hooks.contains_key("SessionStart"));
         assert!(hooks.contains_key("UserPromptSubmit"));
+    }
+
+    fn events(hooks: &serde_json::Map<String, serde_json::Value>) -> Vec<String> {
+        let mut names: Vec<String> = hooks.keys().cloned().collect();
+        names.sort();
+        names
+    }
+
+    fn entry<'a>(
+        hooks: &'a serde_json::Map<String, serde_json::Value>,
+        event: &str,
+    ) -> &'a serde_json::Value {
+        &hooks[event][0]["hooks"][0]
+    }
+
+    #[test]
+    fn session_variant_without_voice_only_tracks_the_session() {
+        let hooks = build_hooks("http://127.0.0.1:9123", "tok", "pty-1", false, false);
+        assert_eq!(events(&hooks), vec!["SessionStart", "UserPromptSubmit"]);
+    }
+
+    #[test]
+    fn voice_adds_tool_stop_and_permission_events_to_the_session_variant() {
+        let hooks = build_hooks("http://127.0.0.1:9123", "tok", "pty-1", false, true);
+        assert_eq!(
+            events(&hooks),
+            vec![
+                "PermissionRequest",
+                "PostToolUse",
+                "PreToolUse",
+                "SessionStart",
+                "Stop",
+                "UserPromptSubmit"
+            ]
+        );
+        assert_eq!(entry(&hooks, "PermissionRequest")["timeout"], PERMISSION_HOOK_TIMEOUT_SECS);
+        assert_eq!(entry(&hooks, "PreToolUse")["timeout"], 5);
+        assert_eq!(entry(&hooks, "PreToolUse")["headers"]["X-Alethe-Voice-Only"], "1");
+        assert!(entry(&hooks, "SessionStart")["headers"].get("X-Alethe-Voice-Only").is_none());
+    }
+
+    #[test]
+    fn voice_on_the_full_variant_registers_no_event_twice() {
+        let hooks = build_hooks("http://127.0.0.1:9123", "tok", "pty-1", true, true);
+        for event in ["PreToolUse", "PostToolUse", "Stop"] {
+            assert_eq!(hooks[event].as_array().unwrap().len(), 1, "{event} registered twice");
+            assert!(
+                entry(&hooks, event)["headers"].get("X-Alethe-Voice-Only").is_none(),
+                "{event} belongs to the orchestrator variant, so it is not voice-only"
+            );
+        }
+        assert_eq!(entry(&hooks, "PermissionRequest")["headers"]["X-Alethe-Voice-Only"], "1");
+        assert!(hooks.contains_key("SubagentStart"));
+    }
+
+    #[test]
+    fn every_http_hook_carries_the_token_and_the_planner() {
+        let hooks = build_hooks("http://127.0.0.1:9123", "tok", "pty-1", true, true);
+        // SessionStart runs curl, which carries both in its arguments (tested above).
+        for (event, _) in hooks.iter().filter(|(event, _)| *event != "SessionStart") {
+            let headers = &entry(&hooks, event)["headers"];
+            assert_eq!(headers["X-Alethe-Token"], "tok", "{event}");
+            assert_eq!(headers["X-Alethe-Planner"], "pty-1", "{event}");
+            assert_eq!(entry(&hooks, event)["url"], "http://127.0.0.1:9123/hook");
+        }
+    }
+
+    #[test]
+    fn every_hook_event_redacts_payload_content() {
+        for event in [
+            "SessionStart",
+            "UserPromptSubmit",
+            "SubagentStart",
+            "SubagentStop",
+            "PreToolUse",
+            "PostToolUse",
+            "PermissionRequest",
+            "Stop",
+            "custom-event",
+        ] {
+            let body = serde_json::json!({
+                "hook_event_name": event,
+                "prompt": "secret-prompt",
+                "tool_input": { "command": "secret-command" },
+                "tool_response": "secret-file-contents",
+                "transcript_path": "secret-path",
+            })
+            .to_string();
+            let line = hook_log_line(&body);
+            assert!(!line.contains("secret-"), "{event} leaked payload content");
+        }
+    }
+
+    #[test]
+    fn hook_logs_redact_untrusted_event_and_tool_names() {
+        let body = serde_json::json!({
+            "hook_event_name": "secret-event\nforged-log",
+            "tool_name": "secret-tool",
+            "agent_id": "secret-agent",
+            "agent_type": "secret-type",
+        })
+        .to_string();
+        let line = hook_log_line(&body);
+        assert!(!line.contains("secret-"));
+        assert!(!line.contains('\n'));
     }
 
     #[test]
@@ -895,5 +1733,189 @@ mod tests {
             "bridge script should report request failures on stderr"
         );
         removed.expect("generated bridge script should be removable");
+    }
+
+    fn legacy_hooks(script: &str) -> String {
+        ["SubagentStart", "SubagentStop"]
+            .iter()
+            .map(|event| {
+                format!(
+                    "[[hooks.{event}]]\nmatcher = \".*\"\n\n[[hooks.{event}.hooks]]\ntype = \"command\"\ncommand = \"true\"\ncommandWindows = 'powershell.exe -File \"C:\\Temp\\alethe-codex-hook-forward-{script}.ps1\"'\ntimeout = 5\n\n"
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn legacy_alethe_hook_blocks_are_removed_and_everything_else_stays() {
+        let body = format!(
+            "# vault config\n[mcp_servers.obsidian]\ncommand = \"npx\"\n\n{}\n\n{}# my own hook\n[[hooks.Stop]]\nmatcher = \".*\"\n\n[[hooks.Stop.hooks]]\ntype = \"command\"\ncommand = \"notify\"\n",
+            legacy_hooks("9123-abc"),
+            legacy_hooks("d03793a5"),
+        );
+
+        let stripped = strip_legacy_codex_hooks(&body);
+
+        assert!(!stripped.contains("alethe-codex-hook-forward-"));
+        assert!(!stripped.contains("SubagentStart"));
+        assert!(stripped.starts_with("# vault config\n[mcp_servers.obsidian]\ncommand = \"npx\"\n"));
+        assert!(stripped.contains("# my own hook\n[[hooks.Stop]]"));
+        assert!(stripped.contains("command = \"notify\""));
+        assert!(!stripped.contains("\n\n\n"));
+        stripped
+            .parse::<toml_edit::DocumentMut>()
+            .expect("still valid TOML");
+    }
+
+    #[test]
+    fn a_hook_group_that_also_runs_the_users_command_is_kept() {
+        let body = "[[hooks.SubagentStart]]\nmatcher = \".*\"\n\n[[hooks.SubagentStart.hooks]]\ntype = \"command\"\ncommand = \"true\"\ncommandWindows = 'alethe-codex-hook-forward-1.ps1'\n\n[[hooks.SubagentStart.hooks]]\ntype = \"command\"\ncommand = \"log-subagent\"\n";
+
+        assert_eq!(strip_legacy_codex_hooks(body), body.trim_end_matches('\n'));
+    }
+}
+
+#[cfg(test)]
+mod voice_hooked_tests {
+    use super::VoiceHookedPtys;
+
+    #[test]
+    fn a_voice_hook_file_records_its_planner_and_a_plain_one_does_not() {
+        let hooked = VoiceHookedPtys::default();
+        hooked.note("pty-voice", true);
+        hooked.note("pty-plain", false);
+        assert_eq!(hooked.list(), vec!["pty-voice".to_string()]);
+    }
+
+    #[test]
+    fn a_plain_rewrite_for_the_same_planner_forgets_it() {
+        let hooked = VoiceHookedPtys::default();
+        hooked.note("pty-1", true);
+        hooked.note("pty-1", false);
+        assert!(hooked.list().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod permission_tests {
+    use super::{
+        permission_decision_body, require_main_window, PendingPermissions, PermissionBehavior,
+        PermissionResponder, PERMISSION_HOLD,
+    };
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+
+    type Answers = Arc<Mutex<Vec<Option<String>>>>;
+
+    struct Recorder(Answers);
+
+    impl PermissionResponder for Recorder {
+        fn answer(self: Box<Self>, body: Option<String>) {
+            self.0.lock().unwrap().push(body);
+        }
+    }
+
+    fn held(pending: &PendingPermissions, planner: &str, answers: &Answers, now: Instant) -> String {
+        pending.hold(planner.to_string(), Box::new(Recorder(answers.clone())), now)
+    }
+
+    #[test]
+    fn allow_answers_with_the_documented_decision_shape() {
+        let body = permission_decision_body(PermissionBehavior::Allow, Some("ignored")).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(value["hookSpecificOutput"]["hookEventName"], "PermissionRequest");
+        assert_eq!(value["hookSpecificOutput"]["decision"]["behavior"], "allow");
+        assert!(value["hookSpecificOutput"]["decision"].get("message").is_none());
+    }
+
+    #[test]
+    fn deny_carries_the_spoken_reason() {
+        let body = permission_decision_body(PermissionBehavior::Deny, Some(" use pnpm ")).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(value["hookSpecificOutput"]["decision"]["behavior"], "deny");
+        assert_eq!(value["hookSpecificOutput"]["decision"]["message"], "use pnpm");
+    }
+
+    #[test]
+    fn defer_answers_with_no_decision() {
+        assert_eq!(permission_decision_body(PermissionBehavior::Defer, None), None);
+    }
+
+    #[test]
+    fn a_decision_answers_the_held_request_once() {
+        let pending = PendingPermissions::default();
+        let answers: Answers = Arc::default();
+        let id = held(&pending, "pty-1", &answers, Instant::now());
+
+        pending.decide(&id, PermissionBehavior::Allow, None).unwrap();
+        assert_eq!(answers.lock().unwrap().len(), 1);
+        assert!(answers.lock().unwrap()[0].as_deref().unwrap().contains("allow"));
+        assert!(pending.decide(&id, PermissionBehavior::Deny, None).is_err());
+        assert_eq!(answers.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn an_unknown_id_is_refused() {
+        let pending = PendingPermissions::default();
+        assert!(pending.decide("nope", PermissionBehavior::Allow, None).is_err());
+    }
+
+    #[test]
+    fn a_request_past_its_deadline_is_released_without_a_decision() {
+        let pending = PendingPermissions::default();
+        let answers: Answers = Arc::default();
+        let start = Instant::now();
+        let id = held(&pending, "pty-1", &answers, start);
+
+        assert!(pending.release_expired(start + Duration::from_secs(10)).is_empty());
+        let released = pending.release_expired(start + PERMISSION_HOLD);
+        assert_eq!(released, vec![id]);
+        assert_eq!(*answers.lock().unwrap(), vec![None]);
+    }
+
+    #[test]
+    fn hold_is_shorter_than_the_hook_timeout() {
+        assert!(PERMISSION_HOLD.as_secs() < super::PERMISSION_HOOK_TIMEOUT_SECS);
+    }
+
+    #[test]
+    fn only_targeted_terminals_are_held_and_leaving_the_targets_releases() {
+        let pending = PendingPermissions::default();
+        let answers: Answers = Arc::default();
+        assert!(!pending.is_target("pty-1"));
+        assert!(pending.set_targets(vec!["pty-1".to_string()]).is_empty());
+        assert!(pending.is_target("pty-1"));
+        assert!(!pending.is_target("pty-2"));
+
+        let id = held(&pending, "pty-1", &answers, Instant::now());
+        let released = pending.set_targets(Vec::new());
+        assert_eq!(released, vec![id]);
+        assert_eq!(*answers.lock().unwrap(), vec![None]);
+        assert!(!pending.is_target("pty-1"));
+    }
+
+    #[test]
+    fn shutdown_releases_everything() {
+        let pending = PendingPermissions::default();
+        let answers: Answers = Arc::default();
+        held(&pending, "a", &answers, Instant::now());
+        held(&pending, "b", &answers, Instant::now());
+        assert_eq!(pending.release_all().len(), 2);
+        assert_eq!(*answers.lock().unwrap(), vec![None, None]);
+    }
+
+    #[test]
+    fn only_the_main_window_may_decide() {
+        assert!(require_main_window("main").is_ok());
+        assert!(require_main_window("orchestration-x").is_err());
+        assert!(require_main_window("voice-hud").is_err());
+    }
+
+    #[test]
+    fn behavior_parsing_refuses_unknown_values() {
+        assert_eq!(PermissionBehavior::parse("allow").unwrap(), PermissionBehavior::Allow);
+        assert_eq!(PermissionBehavior::parse("deny").unwrap(), PermissionBehavior::Deny);
+        assert_eq!(PermissionBehavior::parse("defer").unwrap(), PermissionBehavior::Defer);
+        assert!(PermissionBehavior::parse("yes").is_err());
     }
 }

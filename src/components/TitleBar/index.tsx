@@ -16,6 +16,7 @@ import {
   Pin,
   Play,
   RefreshCw,
+  Route,
   Smartphone,
   Timer,
   Users,
@@ -25,22 +26,25 @@ import {
 import { useEffect, useRef, useState } from 'react'
 
 import { requestAppClose } from '../../hooks/useCloseConfirmation'
+import { usePolling } from '../../hooks/usePolling'
 import { useRouter9Runtime } from '../../hooks/useRouter9Runtime'
 import { getCachedAntigravityUsage } from '../../lib/antigravityUsageCache'
 import { BRAND_NAME } from '../../lib/brand'
 import { loadClaudeUsage } from '../../lib/claudeUsageCache'
 import { getCachedCodexUsage } from '../../lib/codexUsageCache'
-import { getCachedKimiUsage } from '../../lib/kimiUsageCache'
 import { useT } from '../../lib/i18n'
-import { useSidebarViews } from '../../lib/viewPlacement'
+import { getCachedKimiUsage } from '../../lib/kimiUsageCache'
 import { observeClaudeReset, observeCodexReset } from '../../lib/limitResetWatch'
-import { formatShortcut } from '../../lib/platform'
+import { formatUsd, openRouterAlertLevel } from '../../lib/openrouterAlerts'
+import { formatShortcut, isMacOS } from '../../lib/platform'
 import { codexHeadlineWindow, hasCodexWindow, killPty, remoteControlInfo } from '../../lib/tauri'
+import { useSidebarViews } from '../../lib/viewPlacement'
 import { usePomodoroStore } from '../../stores/pomodoroStore'
 import { useProjectsStore } from '../../stores/projectsStore'
 import { useUiStore } from '../../stores/uiStore'
 import { AntigravityIcon, ClaudeIcon, CodexIcon, KimiIcon } from '../icons/AgentIcons'
 import { ContextMenu, type MenuItem } from '../ProjectSidebar/ContextMenu'
+import { NotificationHistory } from './NotificationHistory'
 import styles from './TitleBar.module.css'
 
 // How often the title bar asks each usage API on its own. Claude and Codex push their usage from
@@ -49,6 +53,10 @@ const PUSHED_AUTO_SYNC_INTERVAL_MS = 10 * 60_000
 const AUTO_SYNC_INTERVAL_MS = 5 * 60_000
 const REMOTE_CONTROL_POLL_INTERVAL_MS = 2_000
 const APP_TITLE = import.meta.env.DEV ? `(DEV) ${BRAND_NAME}` : BRAND_NAME
+// macOS draws its own close/minimize/zoom buttons (`tauri.macos.conf.json`): the bar leaves
+// room for them on the left instead of drawing a second set on the right.
+const NATIVE_WINDOW_CONTROLS = isMacOS()
+const TRAFFIC_LIGHTS_INSET = 72
 
 function usagePillColor(utilization: number): string {
   if (utilization >= 80) return 'var(--status-offline)'
@@ -67,6 +75,13 @@ function formatResetTime(resetsAt: string): string {
     return resetsAt
   }
 }
+
+const OPENROUTER_PILL_COLOR = {
+  none: 'var(--status-working)',
+  low: 'var(--status-waiting)',
+  critical: 'var(--status-offline)',
+  empty: 'var(--status-offline)',
+} as const
 
 function formatPct(value: number): string {
   return `${value.toFixed(0)}%`
@@ -104,7 +119,8 @@ function MemoryPillButton({ ramMb }: { ramMb: number }) {
 function Router9PillButton() {
   const t = useT()
   const { config, status, hasInstall, busy, start, stop } = useRouter9Runtime()
-  if (!config.enabled || !hasInstall) return null
+  // Start/stop only applies to the local process; a remote gateway is always up.
+  if (!config.enabled || config.mode === 'remote' || !hasInstall) return null
   return (
     <button
       type="button"
@@ -266,6 +282,7 @@ export function TitleBar() {
   const claudeUsageStale = useUiStore((s) => s.claudeUsageError !== null)
   const codexUsage = useUiStore((s) => s.codexUsage)
   const antigravityUsage = useUiStore((s) => s.antigravityUsage)
+  const openrouterUsage = useUiStore((s) => s.openrouterUsage)
   const updateInfo = useUiStore((s) => s.updateInfo)
   const setCodexUsage = useUiStore((s) => s.setCodexUsage)
   const setAntigravityUsage = useUiStore((s) => s.setAntigravityUsage)
@@ -295,6 +312,15 @@ export function TitleBar() {
   const threeAreas = preferences.topbarStyle === 'three-areas'
   const antigravityReady =
     antigravityUsage?.status === 'ready' && antigravityUsage.buckets.length > 0
+  const openrouterReady = openrouterUsage?.status === 'ready'
+  const openrouterHeadline = openrouterReady ? openrouterUsage.headline : null
+  const openrouterPillText = !openrouterReady
+    ? '—'
+    : openrouterHeadline
+      ? formatUsd(openrouterHeadline.remaining_usd)
+      : openrouterUsage.key
+        ? formatUsd(openrouterUsage.key.usage_monthly)
+        : '—'
   const remoteConnectedLabel =
     remoteConnectedDevices > 0
       ? t(
@@ -317,134 +343,83 @@ export function TitleBar() {
 
   const activeRef = useRef(true)
 
-  useEffect(() => {
-    let cancelled = false
-    const refreshRemoteDevices = async () => {
-      if (!activeRef.current) return
-      try {
-        const info = await remoteControlInfo()
-        if (!cancelled) {
-          setRemoteConnectedDevices(info.connected_devices)
-          setRemoteBackendEnabled(info.enabled)
-        }
-      } catch {
-        if (!cancelled) {
-          setRemoteConnectedDevices(0)
-          setRemoteBackendEnabled(false)
-        }
+  usePolling(async (isCancelled) => {
+    if (!activeRef.current) return
+    try {
+      const info = await remoteControlInfo()
+      if (!isCancelled()) {
+        setRemoteConnectedDevices(info.connected_devices)
+        setRemoteBackendEnabled(info.enabled)
+      }
+    } catch {
+      if (!isCancelled()) {
+        setRemoteConnectedDevices(0)
+        setRemoteBackendEnabled(false)
       }
     }
-    void refreshRemoteDevices()
-    const interval = window.setInterval(
-      () => void refreshRemoteDevices(),
-      REMOTE_CONTROL_POLL_INTERVAL_MS,
-    )
-    return () => {
-      cancelled = true
-      window.clearInterval(interval)
-    }
-  }, [])
+  }, REMOTE_CONTROL_POLL_INTERVAL_MS)
 
   // Each provider polls only while its usage reading is on: off schedules no timer at all.
-  useEffect(() => {
-    if (!usageAccess.claude) return
-    let cancelled = false
-    let interval: number | null = null
-    const tick = async () => {
+  usePolling(
+    async (isCancelled) => {
       if (!activeRef.current) return
       const usage = await loadClaudeUsage()
-      if (usage && !cancelled) observeClaudeReset(usage)
-    }
-    const startupDelay = window.setTimeout(() => {
-      void tick()
-      interval = window.setInterval(tick, PUSHED_AUTO_SYNC_INTERVAL_MS)
-    }, 1500)
-    return () => {
-      cancelled = true
-      window.clearTimeout(startupDelay)
-      if (interval !== null) window.clearInterval(interval)
-    }
-  }, [usageAccess.claude])
+      if (usage && !isCancelled()) observeClaudeReset(usage)
+    },
+    PUSHED_AUTO_SYNC_INTERVAL_MS,
+    usageAccess.claude,
+    1500,
+  )
 
-  useEffect(() => {
-    if (!usageAccess.codex) return
-    let cancelled = false
-    let interval: number | null = null
-    let consecutiveFailures = 0
-    const tick = async () => {
+  const codexFailuresRef = useRef(0)
+  usePolling(
+    async (isCancelled) => {
       if (!activeRef.current) return
       try {
         const usage = await getCachedCodexUsage()
-        if (!cancelled) {
+        if (!isCancelled()) {
           setCodexUsage(usage)
           observeCodexReset(usage)
-          consecutiveFailures = 0
+          codexFailuresRef.current = 0
         }
       } catch {
-        consecutiveFailures += 1
-        if (consecutiveFailures >= 3 && !cancelled) {
-          setCodexUsage(null)
-        }
+        codexFailuresRef.current += 1
+        if (codexFailuresRef.current >= 3 && !isCancelled()) setCodexUsage(null)
       }
-    }
-    const startupDelay = window.setTimeout(() => {
-      void tick()
-      interval = window.setInterval(tick, PUSHED_AUTO_SYNC_INTERVAL_MS)
-    }, 2500)
-    return () => {
-      cancelled = true
-      window.clearTimeout(startupDelay)
-      if (interval !== null) window.clearInterval(interval)
-    }
-  }, [setCodexUsage, usageAccess.codex])
+    },
+    PUSHED_AUTO_SYNC_INTERVAL_MS,
+    usageAccess.codex,
+    2500,
+  )
 
-  useEffect(() => {
-    if (!usageAccess.antigravity) return
-    let cancelled = false
-    let interval: number | null = null
-    const tick = async () => {
+  usePolling(
+    async (isCancelled) => {
       if (!activeRef.current) return
       try {
         const usage = await getCachedAntigravityUsage()
-        if (!cancelled) {
-          setAntigravityUsage(usage)
-        }
+        if (!isCancelled()) setAntigravityUsage(usage)
       } catch {
-        if (!cancelled) {
-          setAntigravityUsage(null)
-        }
+        if (!isCancelled()) setAntigravityUsage(null)
       }
-    }
-    const startupDelay = window.setTimeout(() => {
-      void tick()
-      interval = window.setInterval(tick, AUTO_SYNC_INTERVAL_MS)
-    }, 3000)
-    return () => {
-      cancelled = true
-      window.clearTimeout(startupDelay)
-      if (interval !== null) window.clearInterval(interval)
-    }
-  }, [setAntigravityUsage, usageAccess.antigravity])
+    },
+    AUTO_SYNC_INTERVAL_MS,
+    usageAccess.antigravity,
+    3000,
+  )
 
-  useEffect(() => {
-    if (!usageAccess.kimi) return
-    let cancelled = false
-    const tick = async () => {
+  usePolling(
+    async (isCancelled) => {
       if (!activeRef.current) return
       try {
         const usage = await getCachedKimiUsage()
-        if (!cancelled) setKimiUsage(usage)
+        if (!isCancelled()) setKimiUsage(usage)
       } catch {
-        if (!cancelled) setKimiUsage(null)
+        if (!isCancelled()) setKimiUsage(null)
       }
-    }
-    void tick()
-    const interval = window.setInterval(tick, AUTO_SYNC_INTERVAL_MS)
-    return () => {
-      cancelled = true
-      window.clearInterval(interval)
-    }
-  }, [setKimiUsage, usageAccess.kimi])
+    },
+    AUTO_SYNC_INTERVAL_MS,
+    usageAccess.kimi,
+  )
 
   const win = getCurrentWindow()
 
@@ -472,6 +447,33 @@ export function TitleBar() {
     void win.setTitle(APP_TITLE)
   }, [win])
 
+  // The traffic lights hide in native full screen, so their gap goes with them.
+  const [fullscreen, setFullscreen] = useState(false)
+  useEffect(() => {
+    if (!NATIVE_WINDOW_CONTROLS) return
+    const appWindow = getCurrentWindow()
+    let cancelled = false
+    let unlisten: (() => void) | undefined
+    const sync = () => {
+      void appWindow
+        .isFullscreen()
+        .then((value) => {
+          if (!cancelled) setFullscreen(value)
+        })
+        .catch(() => {})
+    }
+    sync()
+    void appWindow.onResized(sync).then((fn) => {
+      if (cancelled) fn()
+      else unlisten = fn
+    })
+    return () => {
+      cancelled = true
+      unlisten?.()
+    }
+  }, [])
+  const trafficLightsInset = NATIVE_WINDOW_CONTROLS && !fullscreen ? TRAFFIC_LIGHTS_INSET : 0
+
   return (
     <div
       className={styles.bar}
@@ -480,15 +482,16 @@ export function TitleBar() {
       style={
         {
           '--topbar-left-width': preferences.leftSidebarVisible
-            ? `${preferences.leftSidebarWidth}px`
-            : '38px',
+            ? `${Math.max(preferences.leftSidebarWidth, 38 + trafficLightsInset)}px`
+            : `${38 + trafficLightsInset}px`,
+          '--traffic-lights-inset': `${trafficLightsInset}px`,
           '--topbar-right-width': preferences.rightSidebarVisible
             ? `${preferences.rightSidebarWidth}px`
             : '38px',
         } as React.CSSProperties
       }
     >
-      <div className={styles.barStart}>
+      <div className={styles.barStart} data-tauri-drag-region>
         <button
           type="button"
           className={styles.iconBtn}
@@ -578,6 +581,10 @@ export function TitleBar() {
               <div
                 key={tab.id}
                 className={`${styles.groupTab} ${active ? styles.groupTabActive : ''} ${tab.pinned ? styles.groupTabPinned : ''}`}
+                onAuxClick={(event) => {
+                  // Middle-click closes the tab, matching browser tab-strip convention.
+                  if (event.button === 1) closeSavedWorkspaceTab(tab.id)
+                }}
                 onContextMenu={(event) => {
                   event.preventDefault()
                   setTabMenu({
@@ -690,9 +697,10 @@ export function TitleBar() {
         </div>
       ) : null}
       <div className={styles.spacer} data-tauri-drag-region />
-      <div className={styles.barEnd}>
-        <div className={styles.widgets}>
+      <div className={styles.barEnd} data-tauri-drag-region>
+        <div className={styles.widgets} data-tauri-drag-region>
           <div className={styles.utilityGroup}>
+            <NotificationHistory />
             {!threeAreas ? (
               <button
                 type="button"
@@ -955,6 +963,89 @@ export function TitleBar() {
                 </div>
               </div>
             ) : null}
+            {preferences.topbarShowOpenRouterUsage && openrouterUsage !== null ? (
+              <div className={styles.usageWidget}>
+                <button
+                  type="button"
+                  className={`${styles.usagePill} ${styles.openrouterUsage}`}
+                  style={
+                    {
+                      '--pill-color': openrouterHeadline
+                        ? OPENROUTER_PILL_COLOR[openRouterAlertLevel(openrouterUsage)]
+                        : 'var(--fg-faint)',
+                    } as React.CSSProperties
+                  }
+                  onClick={() => openModal('aiUsage')}
+                  title={t('ui.titlebar.openUsageDetails')}
+                  aria-label={t('ui.titlebar.openUsageDetails')}
+                >
+                  <Route size={13} />
+                  <span>{openrouterPillText}</span>
+                </button>
+                <div
+                  className={styles.usagePopover}
+                  role="tooltip"
+                  aria-label={t('ui.titlebar.itemOpenRouter')}
+                >
+                  <div className={styles.usagePopoverTitle}>{t('ui.titlebar.itemOpenRouter')}</div>
+                  {openrouterReady ? (
+                    <>
+                      {openrouterHeadline ? (
+                        <>
+                          <div className={styles.usagePopoverMain}>
+                            <span>{t('openrouter.remaining')}</span>
+                            <strong>{formatUsd(openrouterHeadline.remaining_usd)}</strong>
+                          </div>
+                          <div className={styles.usagePopoverLine}>
+                            <span>{t(`openrouter.source.${openrouterHeadline.source}`)}</span>
+                            <strong>
+                              {formatPct(openrouterHeadline.used_percent)} ·{' '}
+                              {formatUsd(openrouterHeadline.total_usd)}
+                            </strong>
+                          </div>
+                        </>
+                      ) : (
+                        <div className={styles.usagePopoverMain}>
+                          <span>{t('openrouter.spentMonth')}</span>
+                          <strong>{openrouterPillText}</strong>
+                        </div>
+                      )}
+                      {openrouterUsage.key ? (
+                        <div className={styles.usagePopoverLine}>
+                          <span>{t('openrouter.today')}</span>
+                          <strong>{formatUsd(openrouterUsage.key.usage_daily)}</strong>
+                        </div>
+                      ) : null}
+                      {openrouterUsage.daily_burn_usd !== null ? (
+                        <div className={styles.usagePopoverLine}>
+                          <span>{t('openrouter.perDay')}</span>
+                          <strong>{formatUsd(openrouterUsage.daily_burn_usd)}</strong>
+                        </div>
+                      ) : null}
+                      {openrouterUsage.days_left !== null ? (
+                        <div className={styles.usagePopoverLine}>
+                          <span>{t('openrouter.daysLeft')}</span>
+                          <strong>
+                            {t('openrouter.daysShort', {
+                              n: Math.max(0, Math.round(openrouterUsage.days_left)),
+                            })}
+                          </strong>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div className={styles.usagePopoverMain}>
+                      <span>{t('widget.statusLabel')}</span>
+                      <strong>
+                        {openrouterUsage.status === 'no_key'
+                          ? t('openrouter.noKey')
+                          : t('widget.usageUnavailable')}
+                      </strong>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
             {preferences.topbarShowMemory && ramMb !== null ? (
               <MemoryPillButton ramMb={ramMb} />
             ) : null}
@@ -996,33 +1087,37 @@ export function TitleBar() {
             )}
           </button>
         ) : null}
-        <button
-          type="button"
-          className={styles.windowBtn}
-          onClick={() => void win.minimize()}
-          title={t('ui.titlebar.minimize')}
-          aria-label={t('ui.titlebar.minimize')}
-        >
-          <Minus size={14} />
-        </button>
-        <button
-          type="button"
-          className={styles.windowBtn}
-          onClick={() => void win.toggleMaximize()}
-          title={t('ui.titlebar.maximize')}
-          aria-label={t('ui.titlebar.maximize')}
-        >
-          <Maximize2 size={12} />
-        </button>
-        <button
-          type="button"
-          className={`${styles.windowBtn} ${styles.close}`}
-          onClick={() => void requestAppClose()}
-          title={t('ui.titlebar.close')}
-          aria-label={t('ui.titlebar.close')}
-        >
-          <X size={14} />
-        </button>
+        {NATIVE_WINDOW_CONTROLS ? null : (
+          <>
+            <button
+              type="button"
+              className={styles.windowBtn}
+              onClick={() => void win.minimize()}
+              title={t('ui.titlebar.minimize')}
+              aria-label={t('ui.titlebar.minimize')}
+            >
+              <Minus size={14} />
+            </button>
+            <button
+              type="button"
+              className={styles.windowBtn}
+              onClick={() => void win.toggleMaximize()}
+              title={t('ui.titlebar.maximize')}
+              aria-label={t('ui.titlebar.maximize')}
+            >
+              <Maximize2 size={12} />
+            </button>
+            <button
+              type="button"
+              className={`${styles.windowBtn} ${styles.close}`}
+              onClick={() => void requestAppClose()}
+              title={t('ui.titlebar.close')}
+              aria-label={t('ui.titlebar.close')}
+            >
+              <X size={14} />
+            </button>
+          </>
+        )}
       </div>
       {tabMenu ? (
         <ContextMenu

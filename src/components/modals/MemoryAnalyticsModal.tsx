@@ -4,18 +4,24 @@ import {
   CheckCircle2,
   Cpu,
   FolderOpen,
+  Ghost,
   Layers,
   Monitor,
+  RefreshCw,
   TerminalSquare,
   Trash2,
+  X,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { intlLocale, type Locale, type TFunction, useT } from '../../lib/i18n'
 import {
   type CrashReport,
   getJobGuardStatus,
   getLastCrashReport,
+  killLeftoverProcess,
+  type LeftoverProcess,
+  listLeftoverProcesses,
   openLogsFolder,
 } from '../../lib/tauri'
 import { useProjectsStore } from '../../stores/projectsStore'
@@ -266,6 +272,146 @@ function CategoryBars({ latest }: { latest: MemorySample | null }) {
   )
 }
 
+const LEFTOVER_POLL_MS = 5000
+
+function formatUptime(seconds: number, t: TFunction): string {
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+  if (days > 0) return t('mod.durationDays', { days, hours: hours % 24 })
+  if (hours > 0) return t('mod.durationHours', { hours, minutes: minutes % 60 })
+  return t('mod.durationMinutes', { minutes: Math.max(1, minutes) })
+}
+
+function formatStartedAt(secs: number, language: Locale): string {
+  return new Date(secs * 1000).toLocaleString(intlLocale(language), {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function LeftoverProcesses({ open }: { open: boolean }) {
+  const t = useT()
+  const language = useProjectsStore((s) => s.preferences.language)
+  const [leftovers, setLeftovers] = useState<LeftoverProcess[] | null>(null)
+  const [busy, setBusy] = useState<Set<number>>(new Set())
+  const [error, setError] = useState<string | null>(null)
+
+  const refresh = useCallback(() => {
+    void listLeftoverProcesses()
+      .then(setLeftovers)
+      .catch(() => setLeftovers([]))
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+    refresh()
+    const timer = window.setInterval(refresh, LEFTOVER_POLL_MS)
+    return () => window.clearInterval(timer)
+  }, [open, refresh])
+
+  const end = useCallback(
+    async (targets: LeftoverProcess[]) => {
+      setError(null)
+      setBusy((current) => new Set([...current, ...targets.map((target) => target.pid)]))
+      const results = await Promise.allSettled(
+        targets.map((target) => killLeftoverProcess(target.pid, target.startedAtSecs)),
+      )
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          setError(
+            t('mod.leftoversKillFailed', { pid: targets[index].pid, error: String(result.reason) }),
+          )
+        }
+      })
+      setBusy((current) => {
+        const next = new Set(current)
+        targets.forEach((target) => next.delete(target.pid))
+        return next
+      })
+      refresh()
+    },
+    [refresh, t],
+  )
+
+  if (leftovers === null) return null
+  const totalMb = leftovers.reduce((sum, leftover) => sum + leftover.memoryMb, 0)
+
+  return (
+    <section className={styles.panel}>
+      <div className={styles.panelHeader}>
+        <div>
+          <h3>{t('mod.leftoversTitle')}</h3>
+          <p>{t('mod.leftoversSubtitle', { count: leftovers.length, total: formatMb(totalMb) })}</p>
+        </div>
+        <div className={styles.leftoverActions}>
+          <button
+            type="button"
+            className={`${controls.btn} ${controls.btnSm}`}
+            onClick={refresh}
+            aria-label={t('mod.leftoversRefresh')}
+            title={t('mod.leftoversRefresh')}
+          >
+            <RefreshCw size={12} />
+          </button>
+          {leftovers.length > 1 ? (
+            <button
+              type="button"
+              className={`${controls.btn} ${controls.btnSm} ${controls.btnSmDanger}`}
+              onClick={() => void end(leftovers)}
+              disabled={busy.size > 0}
+            >
+              {t('mod.leftoversKillAll')}
+            </button>
+          ) : null}
+        </div>
+      </div>
+      {error ? <p className={styles.leftoverError}>{error}</p> : null}
+      <div className={styles.runtimeList}>
+        {leftovers.length === 0 ? (
+          <div className={styles.emptyRows}>{t('mod.leftoversEmpty')}</div>
+        ) : (
+          leftovers.map((leftover) => (
+            <div key={`${leftover.pid}-${leftover.startedAtSecs}`} className={styles.leftoverRow}>
+              <Ghost size={14} className={styles.leftoverIcon} />
+              <span className={styles.runtimeIdentity}>
+                <strong title={leftover.command}>{leftover.command || leftover.name}</strong>
+                <small title={leftover.cwd ?? undefined}>
+                  {[
+                    `PID ${leftover.pid}`,
+                    t('mod.leftoversRunningFor', {
+                      duration: formatUptime(leftover.uptimeSecs, t),
+                    }),
+                    t('mod.leftoversStartedAt', {
+                      time: formatStartedAt(leftover.startedAtSecs, language),
+                    }),
+                    leftover.cwd,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </small>
+              </span>
+              <span>{leftover.processCount} proc.</span>
+              <strong>{formatMb(leftover.memoryMb)}</strong>
+              <button
+                type="button"
+                className={`${controls.btn} ${controls.btnSm} ${controls.btnSmDanger}`}
+                onClick={() => void end([leftover])}
+                disabled={busy.has(leftover.pid)}
+              >
+                <X size={12} />
+                {t('mod.leftoversKill')}
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </section>
+  )
+}
+
 export function MemoryAnalyticsModal() {
   const t = useT()
   const language = useProjectsStore((s) => s.preferences.language)
@@ -460,6 +606,8 @@ export function MemoryAnalyticsModal() {
             <CategoryBars latest={latest} />
           </section>
         </div>
+
+        <LeftoverProcesses open={open} />
 
         {runtimeSnapshot ? (
           <section className={styles.panel}>

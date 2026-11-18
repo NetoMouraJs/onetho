@@ -82,6 +82,7 @@ pub fn register_pty_root(pty_id: &str, pid: u32) {
     if let Ok(mut guard) = roots().lock() {
         guard.insert(pty_id.to_string(), pid);
     }
+    pty_jobs::attach(pty_id, pid);
     persist_roots();
 }
 
@@ -89,7 +90,84 @@ pub fn unregister_pty(pty_id: &str) {
     if let Ok(mut guard) = roots().lock() {
         guard.remove(pty_id);
     }
+    pty_jobs::release(pty_id);
     persist_roots();
+}
+
+// `taskkill /T` misses children whose parent already exited; job membership does not.
+#[cfg(windows)]
+mod pty_jobs {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, TerminateJobObject,
+    };
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE};
+
+    static JOBS: OnceLock<Mutex<HashMap<String, isize>>> = OnceLock::new();
+
+    fn jobs() -> &'static Mutex<HashMap<String, isize>> {
+        JOBS.get_or_init(|| Mutex::new(HashMap::new()))
+    }
+
+    fn take(pty_id: &str) -> Option<HANDLE> {
+        jobs()
+            .lock()
+            .ok()?
+            .remove(pty_id)
+            .map(|job| job as HANDLE)
+    }
+
+    pub fn attach(pty_id: &str, pid: u32) {
+        let job = unsafe {
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if job.is_null() {
+                return;
+            }
+            let process = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
+            if process.is_null() {
+                CloseHandle(job);
+                return;
+            }
+            let assigned = AssignProcessToJobObject(job, process) != 0;
+            CloseHandle(process);
+            if !assigned {
+                CloseHandle(job);
+                return;
+            }
+            job
+        };
+        let previous = jobs()
+            .lock()
+            .ok()
+            .and_then(|mut guard| guard.insert(pty_id.to_string(), job as isize));
+        if let Some(previous) = previous {
+            unsafe { CloseHandle(previous as HANDLE) };
+        }
+    }
+
+    pub fn terminate(pty_id: &str) {
+        if let Some(job) = take(pty_id) {
+            unsafe {
+                TerminateJobObject(job, 1);
+                CloseHandle(job);
+            }
+        }
+    }
+
+    pub fn release(pty_id: &str) {
+        if let Some(job) = take(pty_id) {
+            unsafe { CloseHandle(job) };
+        }
+    }
+}
+
+#[cfg(not(windows))]
+mod pty_jobs {
+    pub fn attach(_pty_id: &str, _pid: u32) {}
+    pub fn terminate(_pty_id: &str) {}
+    pub fn release(_pty_id: &str) {}
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -311,6 +389,7 @@ fn kill_pid(pid: u32) {
 }
 
 pub fn kill_pty_tree(pty_id: &str) -> Result<Vec<u32>, String> {
+    pty_jobs::terminate(pty_id);
     let root_pid = {
         let guard = roots().lock().map_err(|_| "PTY roots lock poisoned")?;
         guard.get(pty_id).copied()

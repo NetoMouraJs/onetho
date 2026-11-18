@@ -46,6 +46,305 @@ export type ModalContribution = {
   component: ComponentType
 }
 
+/** Mounted once over the whole window while the plugin is active, for bars and indicators. */
+export type OverlayContribution = {
+  id: string
+  component: ComponentType
+}
+
+export type SettingsCategory = 'integrations' | 'voice'
+
+// A section on its Preferences page, also listed in settings search.
+export type SettingsContribution = {
+  id: string
+  // Preferences page the section renders on; defaults to 'integrations'
+  category?: SettingsCategory
+  /** Called on render, so a plugin's own `t` follows the current language. */
+  title: () => string
+  description?: () => string
+  /** Extra words the settings search matches on. */
+  keywords?: string
+  component: ComponentType
+}
+
+export type WorkspaceProject = {
+  id: string
+  name: string
+  path: string
+}
+
+export type WorkspaceTerminal = {
+  id: string
+  projectId: string
+  projectName: string
+  name: string
+  agent: string
+  agentLabel: string
+  cwd: string
+  /** Its process is alive, so it can be typed into. */
+  running: boolean
+  /** Its agent is working on something right now. */
+  busy: boolean
+}
+
+export type WorkspaceAgent = {
+  id: string
+  label: string
+}
+
+export type WorkspaceSnapshot = {
+  projects: WorkspaceProject[]
+  terminals: WorkspaceTerminal[]
+  /** Enabled agent CLIs, shells excluded. */
+  agents: WorkspaceAgent[]
+  focusedProjectId: string | null
+  focusedTerminalId: string | null
+}
+
+export type OpenAgentTerminalOptions = {
+  agent: string
+  name?: string
+  /** Typed into the agent once it starts. */
+  prompt?: string
+}
+
+/**
+ * Reads and moves the workspace. Reading needs `workspace.read`, opening, focusing and closing
+ * terminals needs `workspace.control`, and typing into one needs `terminal.write`.
+ */
+export type PluginWorkspace = {
+  snapshot: () => WorkspaceSnapshot
+  focusTerminal: (terminalId: string) => void
+  closeTerminal: (terminalId: string) => void
+  /** Resolves with the new terminal's id. */
+  openAgentTerminal: (projectId: string, options: OpenAgentTerminalOptions) => Promise<string>
+  writeToTerminal: (terminalId: string, text: string) => Promise<void>
+}
+
+export type TerminalSessionStatus = 'working' | 'waiting' | 'stopped' | 'disabled' | 'offline'
+
+export type TerminalSession = {
+  // opaque, and replaced whenever the tab's process is
+  id: string
+  terminalId: string
+  projectId: string
+  projectName: string
+  name: string
+  tabName: string
+  agent: string
+  agentLabel: string
+  shell: boolean
+  status: TerminalSessionStatus
+  cwd: string
+  // the front sub-tab of its pane; only that one mounts a terminal
+  tabActive: boolean
+  // receives live output; kept-alive workspace panes also count
+  visible: boolean
+  // the agent's own conversation id, once known
+  agentSessionId: string | null
+  disabled: boolean
+  // position in sidebar order: project, then pane, then sub-tab
+  order: number
+}
+
+export type TerminalSubmitErrorCode =
+  | 'unknown_session'
+  | 'not_an_agent'
+  | 'not_mounted'
+  | 'pane_hidden'
+  | 'prompt_open'
+  | 'terminal_disabled'
+
+export type TerminalSubmitError = Error & { code: TerminalSubmitErrorCode }
+
+export type TerminalExit = {
+  code: number | null
+  reason: string
+}
+
+export type PluginTerminals = {
+  sessions: () => TerminalSession[]
+  onChange: (handler: () => void) => Disposable
+  onOutput: (sessionId: string, handler: (chunk: string) => void) => Disposable
+  onExit: (sessionId: string, handler: (exit: TerminalExit) => void) => Disposable
+  size: (sessionId: string) => { cols: number; rows: number } | null
+  write: (sessionId: string, text: string) => Promise<void>
+  submit: (sessionId: string, text: string) => Promise<void>
+  interrupt: (sessionId: string) => Promise<void>
+  // null while the session's terminal is not mounted
+  readScreen: (sessionId: string, lines: number) => string | null
+  // resolves once a hidden sub-tab has mounted its terminal
+  focus: (sessionId: string) => Promise<void>
+  restart: (sessionId: string) => Promise<void>
+}
+
+export type VoiceCloudProvider = 'openai' | 'elevenlabs' | 'gemini' | 'openrouter'
+export type VoiceSttProvider = 'local' | 'apple' | VoiceCloudProvider
+export type VoiceTtsProvider = 'system' | 'local' | 'server' | VoiceCloudProvider
+export type VoiceInputDevice = { deviceId: string; label: string; isDefault: boolean }
+export type VoiceNativeLocale = { id: string; name: string; installed: boolean }
+export type VoiceModelState = {
+  id: string
+  status: string
+  progress: number | null
+  error: string | null
+  downloadedBytes: number | null
+  totalBytes: number | null
+  kind: 'stt' | 'tts'
+}
+export type VoiceCapturedAudio = { samples: number[]; sampleRate: number; peak: number }
+export type VoiceVadStatus = {
+  level: number
+  voice: boolean
+  heardMs: number
+  silenceMs: number
+  segments: number
+}
+export type VoiceTranscriptionOptions = { modelId: string; locale?: string }
+export type VoicePrepareOptions = VoiceTranscriptionOptions & { provider?: VoiceSttProvider }
+export type VoiceTranscribeOptions = VoicePrepareOptions & {
+  fallbackLocale?: string
+  usage?: string
+}
+export type VoiceVoicesOptions = { provider?: VoiceTtsProvider; model?: string; server?: string }
+export type VoicePrefetchOptions = {
+  provider?: VoiceTtsProvider
+  model?: string
+  voice?: string
+  rate?: number
+}
+export type VoiceSpeakOptions = VoicePrefetchOptions & { server?: string }
+export type VoiceTtsVoice = { id: string; name: string; language: string }
+export type VoiceUtteranceEvent = { id: number }
+export type VoiceProgressEvent = { id: number; charOffset: number }
+export type VoiceHudRect = { x: number; y: number; width: number; height: number }
+export type VoiceHudPosition = { monitor: string; x: number; y: number; bounds?: VoiceHudRect }
+export type VoiceHudPlacement =
+  | {
+      kind: 'preset'
+      preset:
+        'bottom-center' | 'bottom-left' | 'bottom-right' | 'top-center' | 'top-left' | 'top-right'
+    }
+  | { kind: 'custom'; custom: VoiceHudPosition }
+export type VoiceShortcutEvent = { state: 'pressed' | 'released'; jev: boolean }
+export type VoiceProviderCatalog = {
+  provider: VoiceCloudProvider
+  keyUrl: string
+  models: { id: string; label: string; capability: 'stt' | 'tts' }[]
+  voices: { id: string; label: string }[]
+  hasKey: boolean
+}
+
+export type PluginVoice = {
+  inputDevices: () => Promise<VoiceInputDevice[]>
+  nativeLocales: () => Promise<VoiceNativeLocale[]>
+  modelStates: (locale?: string) => Promise<VoiceModelState[]>
+  prepare: (options: VoicePrepareOptions) => Promise<boolean>
+  startCapture: (deviceId?: string) => Promise<void>
+  captureLevel: () => Promise<number>
+  vadStatus: () => Promise<VoiceVadStatus | null>
+  prepareVad: () => Promise<boolean>
+  stopCapture: () => Promise<VoiceCapturedAudio>
+  stopAndTranscribe: (options: VoiceTranscribeOptions) => Promise<string>
+  transcribePartial: (options: VoiceTranscriptionOptions) => Promise<string>
+  speak: (text: string, options?: VoiceSpeakOptions) => Promise<number>
+  prefetch: (text: string, options?: VoicePrefetchOptions) => Promise<void>
+  stop: () => Promise<void>
+  pause: () => Promise<void>
+  resume: () => Promise<void>
+  setMuted: (muted: boolean) => Promise<void>
+  voices: (options?: VoiceVoicesOptions) => Promise<VoiceTtsVoice[]>
+  onStart: (handler: (event: VoiceUtteranceEvent) => void) => Disposable
+  onEnd: (handler: (event: VoiceUtteranceEvent) => void) => Disposable
+  onProgress: (handler: (event: VoiceProgressEvent) => void) => Disposable
+  setTargets: (sessionIds: string[]) => Promise<void>
+  hookedSessions: () => Promise<string[]>
+  setConversationHooks: (enabled: boolean) => void
+  hud: {
+    show: (placement: VoiceHudPlacement) => Promise<void>
+    hide: () => Promise<void>
+    publish: (state: string) => Promise<void>
+    onAction: (handler: (action: string) => void) => Disposable
+    onMoved: (handler: (position: VoiceHudPosition) => void) => Disposable
+    setShortcut: (accelerator: string | null) => Promise<void>
+    onShortcut: (handler: (event: VoiceShortcutEvent) => void) => Disposable
+  }
+  providers: () => Promise<VoiceProviderCatalog[]>
+  openSettings: () => void
+}
+
+export type AgentHookEvent = {
+  sessionId: string
+  hook_event_name: string
+  // set on a PermissionRequest held for `decidePermission`
+  permissionRequestId?: string
+  [field: string]: unknown
+}
+
+export type AgentToolSummary = {
+  name: string
+  command?: string
+  path?: string
+  description?: string
+}
+
+export type AgentTranscriptMessage = {
+  role: string
+  text: string
+  tool?: AgentToolSummary
+  [field: string]: unknown
+}
+
+export type AgentTranscript = {
+  conversationId: string | null
+  // pass back as `cursor`; an unchanged transcript then returns no messages
+  revision: number
+  unchanged: boolean
+  firstIndex: number
+  messages: AgentTranscriptMessage[]
+}
+
+export type AgentPermissionBehavior = 'allow' | 'deny' | 'defer'
+export type AgentPermissionReleased = { requestId: string; reason: string }
+
+export type PluginAgents = {
+  label: (agent: string) => string
+  // a CSS color that follows the active theme
+  accent: (agent: string) => string
+  onHook: (handler: (event: AgentHookEvent) => void) => Disposable
+  transcript: (sessionId: string, cursor?: number) => Promise<AgentTranscript>
+  decidePermission: (
+    requestId: string,
+    behavior: AgentPermissionBehavior,
+    message?: string,
+  ) => Promise<void>
+  onPermissionReleased: (handler: (event: AgentPermissionReleased) => void) => Disposable
+}
+
+export type PluginAppearance = {
+  theme: string
+  visualStyle: string
+  reducedMotion: boolean
+}
+
+export type PluginDropdownProps = {
+  value: string
+  options: { value: string; label: string }[]
+  onChange: (value: string) => void
+  ariaLabel: string
+  disabled?: boolean
+}
+
+export type PluginComponents = {
+  AgentIcon: ComponentType<{ agent: string; size?: number }>
+  Dropdown: ComponentType<PluginDropdownProps>
+}
+
+export type PluginToast = {
+  title: string
+  body?: string
+}
+
 export type SidebarSide = 'left' | 'right'
 
 /**
@@ -100,6 +399,8 @@ export type PluginContributions = {
   pane: (definition: PaneContribution) => Disposable
   modal: (definition: ModalContribution) => Disposable
   agentProvider: (definition: AgentProviderContribution) => Disposable
+  overlay: (definition: OverlayContribution) => Disposable
+  settings: (definition: SettingsContribution) => Disposable
 }
 
 export type PluginContext = {
@@ -121,13 +422,29 @@ export type PluginContext = {
     revealView: (viewId: string) => void
     /** Opens a modal this plugin contributed. */
     openModal: (modalId: string) => void
+    /** Shows a notification and records it in the notification history. */
+    toast: (toast: PluginToast) => void
+    // app shortcuts stay off until disposed, so a recorder can capture any key
+    suspendKeybindings: () => Disposable
   }
+  readonly workspace: PluginWorkspace
+  readonly voice: PluginVoice
+  readonly terminals: PluginTerminals
+  readonly agents: PluginAgents
+  readonly components: PluginComponents
+  locale: () => Locale
+  appearance: () => PluginAppearance
+  onAppearanceChange: (handler: (appearance: PluginAppearance) => void) => Disposable
   /** Registers messages under `plugin.<id>.` — the prefix is added for you. */
   registerMessages: (locale: Locale, messages: Record<string, string>) => Disposable
   /** Translates one of this plugin's own keys, without the prefix. */
   t: (key: string, params?: Record<string, string | number>) => string
+  /** Hook form of `t` that re-renders the component when the language changes. */
+  useT: () => (key: string, params?: Record<string, string | number>) => string
   /** Rejects any command the manifest does not declare a capability for. */
   invoke: <T>(command: string, args?: Record<string, unknown>) => Promise<T>
+  /** Subscribes to an app event. Needs `listen:<event>`, which accepts a trailing `*`. */
+  listen: <T>(event: string, handler: (payload: T) => void) => Disposable
   /** The plugin's own persisted record, kept outside its served directory. */
   readonly storage: PluginStorage
 }
