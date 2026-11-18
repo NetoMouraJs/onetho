@@ -127,9 +127,15 @@ export function DevDiagnosticsModal() {
                 <span>{t(PHASE_KEYS[event.phase])}</span>
                 <span>
                   {event.failure ? t(FAILURE_KEYS[event.failure]) : '—'}
-                  {event.httpStatus ? ` · ${t('devDiagnostics.httpStatus', { status: event.httpStatus })}` : ''}
+                  {event.httpStatus
+                    ? ` · ${t('devDiagnostics.httpStatus', { status: event.httpStatus })}`
+                    : ''}
                 </span>
-                <span>{event.durationMs === undefined ? '—' : t('devDiagnostics.duration', { duration: event.durationMs })}</span>
+                <span>
+                  {event.durationMs === undefined
+                    ? '—'
+                    : t('devDiagnostics.duration', { duration: event.durationMs })}
+                </span>
                 <code title={event.id}>{event.id.slice(0, 8)}</code>
                 {event.phase === 'failed' ? (
                   <button
@@ -137,20 +143,55 @@ export function DevDiagnosticsModal() {
                     className={styles.detailButton}
                     aria-label={t('devDiagnostics.details')}
                     aria-expanded={expanded === `${event.id}-${event.at}`}
-                    onClick={() => setExpanded(expanded === `${event.id}-${event.at}` ? null : `${event.id}-${event.at}`)}
+                    onClick={() =>
+                      setExpanded(
+                        expanded === `${event.id}-${event.at}` ? null : `${event.id}-${event.at}`,
+                      )
+                    }
                   >
                     <Info size={15} />
                   </button>
-                ) : <span />}
+                ) : (
+                  <span />
+                )}
                 {expanded === `${event.id}-${event.at}` ? (
                   <div className={styles.details}>
-                    <div><strong>{t('devDiagnostics.eventId')}</strong> <code>{event.id}</code></div>
-                    <div><strong>{t('devDiagnostics.source')}</strong> {t(SOURCE_KEYS[event.source])}</div>
-                    <div><strong>{t('devDiagnostics.failure')}</strong> {event.failure ? t(FAILURE_KEYS[event.failure]) : t('devDiagnostics.failure.unknown')}</div>
-                    {event.httpStatus ? <div><strong>{t('devDiagnostics.httpStatus', { status: event.httpStatus })}</strong></div> : null}
-                    <div><strong>{t(event.stackKind === 'error' ? 'devDiagnostics.errorStack' : 'devDiagnostics.callsiteStack')}</strong></div>
-                    {event.stack ? <pre className={styles.stack}>{event.stack}</pre> : <p>{t('devDiagnostics.noStack')}</p>}
-                    {event.source.startsWith('claude.') || event.source.startsWith('codex.') ? <p>{t('devDiagnostics.backendNote')}</p> : null}
+                    <div>
+                      <strong>{t('devDiagnostics.eventId')}</strong> <code>{event.id}</code>
+                    </div>
+                    <div>
+                      <strong>{t('devDiagnostics.source')}</strong> {t(SOURCE_KEYS[event.source])}
+                    </div>
+                    <div>
+                      <strong>{t('devDiagnostics.failure')}</strong>{' '}
+                      {event.failure
+                        ? t(FAILURE_KEYS[event.failure])
+                        : t('devDiagnostics.failure.unknown')}
+                    </div>
+                    {event.httpStatus ? (
+                      <div>
+                        <strong>
+                          {t('devDiagnostics.httpStatus', { status: event.httpStatus })}
+                        </strong>
+                      </div>
+                    ) : null}
+                    <div>
+                      <strong>
+                        {t(
+                          event.stackKind === 'error'
+                            ? 'devDiagnostics.errorStack'
+                            : 'devDiagnostics.callsiteStack',
+                        )}
+                      </strong>
+                    </div>
+                    {event.stack ? (
+                      <pre className={styles.stack}>{event.stack}</pre>
+                    ) : (
+                      <p>{t('devDiagnostics.noStack')}</p>
+                    )}
+                    {event.source.startsWith('claude.') || event.source.startsWith('codex.') ? (
+                      <p>{t('devDiagnostics.backendNote')}</p>
+                    ) : null}
                   </div>
                 ) : null}
               </div>

@@ -3,12 +3,16 @@ import {
   Activity,
   Archive,
   Blocks,
+  Brain,
   ChevronRight,
   Info,
   type LucideIcon,
+  Mic,
+  MonitorPlay,
   Palette,
   Plug,
   Puzzle,
+  Route,
   Search,
   ShieldCheck,
   TerminalSquare,
@@ -19,6 +23,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useT } from '../../lib/i18n'
+import { settingsContributions, useContributions } from '../../lib/plugins'
 import { getProfileImageUrl, getProfileInitial } from '../../lib/profile'
 import { setSectionCollapsed } from '../../lib/settingsSections'
 import { useProjectsStore } from '../../stores/projectsStore'
@@ -26,28 +31,37 @@ import { useUiStore } from '../../stores/uiStore'
 import { ErrorBoundary } from '../ErrorBoundary'
 import { AboutPage } from './preferences/AboutPage'
 import { AccountPage } from './preferences/AccountPage'
+import { AiMemoryPage } from './preferences/AiMemoryPage'
 import { AppearancePage } from './preferences/AppearancePage'
+import { ContributedSettings } from './preferences/ContributedSettings'
 import { FeaturesPage } from './preferences/FeaturesPage'
 import { IntegrationsPage } from './preferences/IntegrationsPage'
 import { MultiagentPage } from './preferences/MultiagentPage'
 import { OrchestrationPage } from './preferences/OrchestrationPage'
 import { OrganizationPage } from './preferences/OrganizationPage'
+import { PlaybooksPage } from './preferences/playbooks/PlaybooksPage'
 import { PluginsPage } from './preferences/PluginsPage'
 import { Avatar } from './preferences/primitives'
 import { RemoteControlPage } from './preferences/RemoteControlPage'
 import { TerminalPage } from './preferences/TerminalPage'
+import { TutorialsPage } from './preferences/TutorialsPage'
+import { VoicePage } from './preferences/voice/VoicePage'
 import styles from './PreferencesModal.module.css'
 
 type CategoryId =
   | 'account'
   | 'appearance'
   | 'features'
+  | 'aiMemory'
   | 'plugins'
+  | 'voice'
   | 'terminal'
   | 'integrations'
   | 'multiagent'
   | 'orchestration'
+  | 'playbooks'
   | 'organization'
+  | 'tutorials'
   | 'about'
   | 'remoteControl'
 
@@ -77,6 +91,7 @@ export function PreferencesModal() {
   const [query, setQuery] = useState('')
   const [resultCursor, setResultCursor] = useState(0)
   const [pendingTarget, setPendingTarget] = useState<string | null>(null)
+  const contributedSettings = useContributions(settingsContributions)
   const contentRef = useRef<HTMLDivElement>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
 
@@ -113,10 +128,22 @@ export function PreferencesModal() {
         Icon: Blocks,
       },
       {
+        id: 'aiMemory',
+        label: t('prefs.categoryAiMemory'),
+        description: t('prefs.categoryAiMemoryDesc'),
+        Icon: Brain,
+      },
+      {
         id: 'plugins',
         label: t('prefs.categoryPlugins'),
         description: t('prefs.categoryPluginsDesc'),
         Icon: Puzzle,
+      },
+      {
+        id: 'voice',
+        label: t('prefs.categoryVoice'),
+        description: t('prefs.categoryVoiceDesc'),
+        Icon: Mic,
       },
       {
         id: 'terminal',
@@ -137,10 +164,22 @@ export function PreferencesModal() {
         Icon: Workflow,
       },
       {
+        id: 'playbooks',
+        label: t('prefs.categoryPlaybooks'),
+        description: t('prefs.categoryPlaybooksDesc'),
+        Icon: Route,
+      },
+      {
         id: 'multiagent',
         label: t('prefs.categoryMultiagent'),
         description: t('prefs.categoryMultiagentDesc'),
         Icon: Activity,
+      },
+      {
+        id: 'tutorials',
+        label: t('prefs.categoryTutorials'),
+        description: t('prefs.categoryTutorialsDesc'),
+        Icon: MonitorPlay,
       },
       {
         id: 'about',
@@ -233,6 +272,13 @@ export function PreferencesModal() {
           'features recursos modules módulos todo task tarefa git source control sidebar 功能 模块 待办',
       },
       {
+        category: 'aiMemory',
+        target: 'ai-memory-service',
+        label: t('prefs.categoryAiMemory'),
+        description: t('prefs.categoryAiMemoryDesc'),
+        keywords: 'ai memory recall context service endpoint port start stop',
+      },
+      {
         category: 'plugins',
         target: 'plugins-installed',
         label: t('prefs.pluginsInstalledTitle'),
@@ -256,11 +302,26 @@ export function PreferencesModal() {
         keywords: 'terminal theme tema colors cores',
       },
       {
+        category: 'voice',
+        target: 'voice-providers',
+        label: t('prefs.categoryVoice'),
+        description: t('prefs.categoryVoiceDesc'),
+        keywords: 'voice speech providers api keys servers models download hugging face',
+      },
+      {
         category: 'terminal',
         target: 'resource-policy',
         label: t('prefs.resourcePolicy'),
         description: t('prefs.resourcePolicyDesc'),
         keywords: 'memory ram performance budget limit lru suspend memória desempenho limite',
+      },
+      {
+        category: 'playbooks',
+        target: 'playbooks',
+        label: t('prefs.categoryPlaybooks'),
+        description: t('prefs.categoryPlaybooksDesc'),
+        keywords:
+          'playbooks flow flowchart diagram fluxo fluxograma diagrama tiers profile perfil quota cota 剧本 流程图',
       },
       {
         category: 'orchestration',
@@ -360,12 +421,20 @@ export function PreferencesModal() {
         description: t('prefs.discordPresenceHint'),
         keywords: 'discord rich presence status integração',
       },
+      ...contributedSettings.map((section): SearchItem => ({
+        category: section.category ?? 'integrations',
+        target: section.id,
+        label: section.title(),
+        description: section.description?.() ?? '',
+        keywords: section.keywords ?? '',
+      })),
       {
-        category: 'integrations',
-        target: 'dictation',
-        label: t('prefs.dictation'),
-        description: t('prefs.dictationDesc'),
-        keywords: 'dictation voice mic microphone ditado voz microfone speech parakeet stt',
+        category: 'tutorials',
+        target: 'tutorials-videos',
+        label: t('tutorials.videosTitle'),
+        description: t('tutorials.videosDesc'),
+        keywords:
+          'tutorial tutorials video videos youtube learn guide help aprender ajuda guia vídeo 教程 视频 帮助',
       },
       {
         category: 'about',
@@ -381,8 +450,39 @@ export function PreferencesModal() {
         description: t('prefs.aboutUpdatesDesc'),
         keywords: 'update atualização atualizar upgrade nova versão release check 更新 升级 版本',
       },
+      {
+        category: 'about',
+        target: 'app-creator',
+        label: t('prefs.aboutCreatorTitle'),
+        description: t('prefs.aboutCreatorDesc'),
+        keywords: 'creator author owner maintainer kc1t kaua miguel criador autor dono 作者 维护者',
+      },
+      {
+        category: 'about',
+        target: 'app-older-versions',
+        label: t('prefs.aboutOlderTitle'),
+        description: t('prefs.aboutOlderDesc'),
+        keywords:
+          'downgrade older previous version rollback release versão anterior antiga voltar 降级 旧版本 回滚',
+      },
+      {
+        category: 'about',
+        target: 'app-contribute',
+        label: t('prefs.aboutContributeTitle'),
+        description: t('prefs.aboutContributeDesc'),
+        keywords:
+          'contribute pull request pr issue bug feature github open source contribuir relatar 贡献 问题 拉取请求',
+      },
+      {
+        category: 'about',
+        target: 'app-info',
+        label: t('prefs.aboutInfoTitle'),
+        description: t('prefs.aboutInfoDesc'),
+        keywords:
+          'license privacy source code data folder logs licença privacidade código pasta dados 许可证 隐私 源代码 日志',
+      },
     ],
-    [t],
+    [contributedSettings, t],
   )
 
   useEffect(() => {
@@ -466,6 +566,9 @@ export function PreferencesModal() {
           ref={dialogRef}
           className={styles.dialog}
           aria-describedby={undefined}
+          onEscapeKeyDown={(event) => {
+            if (document.querySelector('[data-alethe-dropdown-menu]')) event.preventDefault()
+          }}
           onOpenAutoFocus={(event) => {
             event.preventDefault()
             const input =
@@ -570,8 +673,13 @@ export function PreferencesModal() {
               </Dialog.Close>
             </header>
 
-            <div ref={contentRef} className={styles.content}>
-              <div className={styles.contentInner}>
+            <div
+              ref={contentRef}
+              className={category === 'playbooks' ? styles.contentFill : styles.content}
+            >
+              <div
+                className={category === 'playbooks' ? styles.contentFillInner : styles.contentInner}
+              >
                 <ErrorBoundary label="preferences-page">
                   {category === 'account' ? (
                     <AccountPage
@@ -582,12 +690,23 @@ export function PreferencesModal() {
                   ) : null}
                   {category === 'appearance' ? <AppearancePage /> : null}
                   {category === 'features' ? <FeaturesPage /> : null}
+                  {category === 'aiMemory' ? <AiMemoryPage /> : null}
                   {category === 'plugins' ? <PluginsPage /> : null}
+                  {category === 'voice' ? (
+                    <>
+                      <VoicePage />
+                      <ContributedSettings category="voice" />
+                    </>
+                  ) : null}
                   {category === 'terminal' ? <TerminalPage enabledCount={enabledCount} /> : null}
                   {category === 'integrations' ? <IntegrationsPage /> : null}
                   {category === 'multiagent' ? <MultiagentPage /> : null}
-                  {category === 'orchestration' ? <OrchestrationPage /> : null}
+                  {category === 'orchestration' ? (
+                    <OrchestrationPage onOpenPlaybooks={() => setCategory('playbooks')} />
+                  ) : null}
+                  {category === 'playbooks' ? <PlaybooksPage /> : null}
                   {category === 'organization' ? <OrganizationPage /> : null}
+                  {category === 'tutorials' ? <TutorialsPage /> : null}
                   {category === 'about' ? <AboutPage /> : null}
                   {category === 'remoteControl' ? <RemoteControlPage /> : null}
                 </ErrorBoundary>

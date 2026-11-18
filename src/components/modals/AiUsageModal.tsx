@@ -6,12 +6,13 @@ import { loadClaudeUsage } from '../../lib/claudeUsageCache'
 import { traceCachedCodexUsage } from '../../lib/codexUsageCache'
 import { useT } from '../../lib/i18n'
 import { getCachedKimiUsage } from '../../lib/kimiUsageCache'
-import { AGENT_TYPE_LABELS, DEFAULT_PREFERENCES } from '../../lib/types'
+import { getCachedOpenRouterUsage } from '../../lib/openrouterUsageCache'
+import { DEFAULT_PREFERENCES } from '../../lib/types'
 import { USAGE_PROVIDERS } from '../../lib/usageProviders'
 import { useProjectsStore } from '../../stores/projectsStore'
 import { useUiStore } from '../../stores/uiStore'
 import { UsageStrip } from '../HomeView/UsageStrip'
-import { AgentIcon } from '../icons/AgentIcons'
+import { UsageProviderIcon } from '../icons/UsageProviderIcon'
 import styles from './AiUsageModal.module.css'
 import { Modal } from './Modal'
 
@@ -50,8 +51,8 @@ function UsageVisibilityEditor() {
         return (
           <div key={provider.id} className={styles.customizeRow}>
             <span className={styles.customizeName}>
-              <AgentIcon type={provider.agentType} size={16} theme={preferences.uiTheme} />
-              {AGENT_TYPE_LABELS[provider.agentType]}
+              <UsageProviderIcon provider={provider} size={16} theme={preferences.uiTheme} />
+              {provider.label}
             </span>
             <VisibilitySwitch
               checked={usageOn}
@@ -75,10 +76,12 @@ export function AiUsageModal() {
   const setCodexUsage = useUiStore((state) => state.setCodexUsage)
   const setAntigravityUsage = useUiStore((state) => state.setAntigravityUsage)
   const setKimiUsage = useUiStore((state) => state.setKimiUsage)
+  const setOpenRouterUsage = useUiStore((state) => state.setOpenRouterUsage)
   const claudeAccess = useProjectsStore((state) => state.preferences.usageAccess.claude)
   const codexAccess = useProjectsStore((state) => state.preferences.usageAccess.codex)
   const antigravityAccess = useProjectsStore((state) => state.preferences.usageAccess.antigravity)
   const kimiAccess = useProjectsStore((state) => state.preferences.usageAccess.kimi)
+  const openrouterAccess = useProjectsStore((state) => state.preferences.usageAccess.openrouter)
   const preferences = useProjectsStore((state) => state.preferences)
   const [editing, setEditing] = useState(false)
 
@@ -113,6 +116,12 @@ export function AiUsageModal() {
         () => !cancelled && setKimiUsage(null),
       )
     }
+    if (openrouterAccess) {
+      void getCachedOpenRouterUsage(true).then(
+        (usage) => !cancelled && setOpenRouterUsage(usage),
+        () => !cancelled && setOpenRouterUsage(null),
+      )
+    }
     return () => {
       cancelled = true
     }
@@ -122,9 +131,11 @@ export function AiUsageModal() {
     codexAccess,
     antigravityAccess,
     kimiAccess,
+    openrouterAccess,
     setAntigravityUsage,
     setCodexUsage,
     setKimiUsage,
+    setOpenRouterUsage,
   ])
 
   return (

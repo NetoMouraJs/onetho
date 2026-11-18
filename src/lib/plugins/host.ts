@@ -1,41 +1,54 @@
 import type { ComponentType } from 'react'
 
 import { BUNDLED_PLUGINS } from '../../plugins'
+import { useProjectsStore } from '../../stores/projectsStore'
+import { useUiStore } from '../../stores/uiStore'
 import { agentProviderContributions } from '../agentProviders'
 import {
   getLocale,
   type Locale,
   registerMessages as registerCoreMessages,
   translateDynamic,
+  useTDynamic,
 } from '../i18n'
+import { suspendKeybindings } from '../keybindingSuspension'
 import {
   pluginInvoke,
+  pluginListen,
   type PluginManifest,
   pluginsDisabled,
   pluginSetEnabled,
   pluginsList,
 } from '../tauri'
+import { createPluginAgents } from './agents'
 import { PLUGIN_API_VERSION } from './constants'
 import { pluginIcon } from './icons'
 import { loadLocalPlugin } from './localTransport'
 import { openContributedModal, revealContributedView } from './navigation'
 import { canInvoke, grants, isValidCapability } from './permissions'
+import { pluginComponents } from './presentation'
 import {
   commandContributions,
   modalContributions,
+  overlayContributions,
   paneContributions,
+  settingsContributions,
   sidebarTabContributions,
   themeContributions,
 } from './registry'
 import { createPluginStorage } from './storage'
+import { createPluginTerminals } from './terminals'
 import type {
   Disposable,
+  PluginAppearance,
   PluginContext,
   PluginModule,
   PluginRuntimeEntry,
   PluginSource,
   SidebarTabProps,
 } from './types'
+import { createPluginVoice } from './voice'
+import { createPluginWorkspace } from './workspace'
 
 const STARTUP_EVENT = 'onStartupFinished'
 const VIEW_EVENT = 'onView:'
@@ -91,6 +104,18 @@ export function activationEvents(manifest: PluginManifest): string[] {
   return declared.length > 0 ? declared : [STARTUP_EVENT]
 }
 
+export function currentAppearance(): PluginAppearance {
+  const { uiTheme, visualStyle, motionPreference } = useProjectsStore.getState().preferences
+  return { theme: uiTheme, visualStyle, reducedMotion: motionPreference === 'reduced' }
+}
+
+function sameAppearance(a: PluginAppearance, b: PluginAppearance): boolean {
+  return (
+    a.theme === b.theme && a.visualStyle === b.visualStyle && a.reducedMotion === b.reducedMotion
+  )
+}
+
+// ADR-010 keeps conversation services behind host capabilities on API 3.
 function createContext(manifest: PluginManifest): PluginContext {
   const subscriptions: Disposable[] = []
   const prefix = `plugin.${manifest.id}.`
@@ -130,6 +155,31 @@ function createContext(manifest: PluginManifest): PluginContext {
         require('agent.provider')
         return track(agentProviderContributions.add(manifest.id, definition))
       },
+      overlay: (definition) => {
+        require('ui.overlay')
+        return track(overlayContributions.add(manifest.id, definition))
+      },
+      settings: (definition) => {
+        require('ui.settings')
+        return track(settingsContributions.add(manifest.id, definition))
+      },
+    },
+    workspace: createPluginWorkspace(require),
+    terminals: createPluginTerminals(require, subscriptions),
+    voice: createPluginVoice(require, subscriptions, manifest.id),
+    agents: createPluginAgents(require, subscriptions),
+    components: pluginComponents,
+    locale: getLocale,
+    appearance: currentAppearance,
+    onAppearanceChange: (handler) => {
+      let last = currentAppearance()
+      const stop = useProjectsStore.subscribe(() => {
+        const next = currentAppearance()
+        if (sameAppearance(next, last)) return
+        last = next
+        handler(next)
+      })
+      return track({ dispose: stop })
     },
     registerView: (viewId, component) => {
       const declared = sidebarTabContributions.get(viewId)
@@ -170,6 +220,10 @@ function createContext(manifest: PluginManifest): PluginContext {
         }
         openContributedModal(modalId)
       },
+      toast: ({ title, body }) => {
+        useUiStore.getState().pushToast({ title, body: body ?? '' })
+      },
+      suspendKeybindings: () => track({ dispose: suspendKeybindings() }),
     },
     registerMessages: (locale: Locale, messages) => {
       const prefixed: Record<string, string> = {}
@@ -178,17 +232,46 @@ function createContext(manifest: PluginManifest): PluginContext {
       return track({ dispose: undo })
     },
     t: (key, params) => translateDynamic(getLocale(), namespaced(key), params),
+    useT: () => {
+      const translate = useTDynamic()
+      return (key, params) => translate(namespaced(key), params)
+    },
     invoke: async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
       if (!canInvoke(manifest.capabilities, command)) {
         throw new Error(`capability_denied:${manifest.id}:invoke:${command}`)
       }
       return pluginInvoke<T>(command, args)
     },
+    listen: <T>(event: string, handler: (payload: T) => void) => {
+      require(`listen:${event}`)
+      let disposed = false
+      let unlisten: (() => void) | null = null
+      void pluginListen<T>(event, handler).then(
+        (stop) => {
+          if (disposed) stop()
+          else unlisten = stop
+        },
+        (error) => {
+          if (import.meta.env.DEV) console.error(`[Alethe][plugin:${manifest.id}]`, error)
+        },
+      )
+      return track({
+        dispose: () => {
+          disposed = true
+          unlisten?.()
+          unlisten = null
+        },
+      })
+    },
   }
 }
 
 function validateManifest(manifest: PluginManifest): string | null {
-  if (manifest.apiVersion !== PLUGIN_API_VERSION) {
+  if (
+    !Number.isInteger(manifest.apiVersion) ||
+    manifest.apiVersion < 1 ||
+    manifest.apiVersion > PLUGIN_API_VERSION
+  ) {
     return `unsupported_api_version:${manifest.apiVersion}`
   }
   const invalid = manifest.capabilities.filter((capability) => !isValidCapability(capability))

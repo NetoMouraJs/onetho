@@ -45,7 +45,9 @@ export function useAgentHookBridge(): void {
               node.startedAt,
             )
             if (!completed || cancelled) return
-            const current = useAgentCanvasStore.getState().nodes.find((entry) => entry.id === node.id)
+            const current = useAgentCanvasStore
+              .getState()
+              .nodes.find((entry) => entry.id === node.id)
             if (current?.status !== 'running') return
             useAgentCanvasStore.getState().ingest({
               hook_event_name: 'SubagentStop',
