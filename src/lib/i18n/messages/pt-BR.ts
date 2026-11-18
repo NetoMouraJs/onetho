@@ -4592,7 +4592,8 @@ export const ptBR: Record<MessageKey, string> = {
   'prefs.voiceKeySavedPlaceholder': '••••••••••••••••',
   'menu.devDiagnostics': 'Diagnóstico Dev',
   'devDiagnostics.title': 'Diagnóstico Dev',
-  'devDiagnostics.description': 'Eventos locais para rastrear atualizações de uso e erros da interface. A exportação contém apenas metadados.',
+  'devDiagnostics.description':
+    'Eventos locais para rastrear atualizações de uso e erros da interface. A exportação contém apenas metadados.',
   'devDiagnostics.events': '{count} eventos',
   'devDiagnostics.failures': '{count} falhas',
   'devDiagnostics.retention': 'Últimos 300 eventos ou 7 dias',

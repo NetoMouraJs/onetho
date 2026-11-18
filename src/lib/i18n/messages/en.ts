@@ -4541,7 +4541,8 @@ export const en = {
   'prefs.voiceKeySavedPlaceholder': '••••••••••••••••',
   'menu.devDiagnostics': 'Dev diagnostics',
   'devDiagnostics.title': 'Dev diagnostics',
-  'devDiagnostics.description': 'Local events for tracing usage refreshes and frontend errors. Export contains metadata only.',
+  'devDiagnostics.description':
+    'Local events for tracing usage refreshes and frontend errors. Export contains metadata only.',
   'devDiagnostics.events': '{count} events',
   'devDiagnostics.failures': '{count} failures',
   'devDiagnostics.retention': 'Last 300 events or 7 days',
