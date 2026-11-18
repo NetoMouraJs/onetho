@@ -232,9 +232,7 @@ function CardHead({
           className={styles.iconBtn}
           onClick={handle}
           disabled={refreshing || !!refreshBlockedTitle}
-          title={
-            refreshBlockedTitle ?? (hasData ? t('widget.refreshUsage') : t('widget.tryAgain'))
-          }
+          title={refreshBlockedTitle ?? (hasData ? t('widget.refreshUsage') : t('widget.tryAgain'))}
         >
           <RefreshCw size={12} className={refreshing ? styles.iconBtnSpin : undefined} />
         </button>

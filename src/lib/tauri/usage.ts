@@ -106,9 +106,7 @@ export type CodexSessionUsage = {
 
 /** The newest Codex usage recorded in a session file; no network involved. */
 export async function getCodexSessionUsage(): Promise<CodexSessionUsage | null> {
-  return withUsageAccess('codex', () =>
-    invoke<CodexSessionUsage | null>('get_codex_session_usage'),
-  )
+  return withUsageAccess('codex', () => invoke<CodexSessionUsage | null>('get_codex_session_usage'))
 }
 
 /** Codex usage as the session watcher reads it, every time a Codex turn records it. */
@@ -143,8 +141,12 @@ export async function getCodexUsage(): Promise<CodexUsage> {
     finishDevTrace(trace, 'succeeded')
     return usage
   } catch (error) {
-    finishDevTrace(trace, isUsageAccessOff(error) ? 'skipped' : 'failed',
-      isUsageAccessOff(error) ? undefined : classifyUsageFailure(error), error)
+    finishDevTrace(
+      trace,
+      isUsageAccessOff(error) ? 'skipped' : 'failed',
+      isUsageAccessOff(error) ? undefined : classifyUsageFailure(error),
+      error,
+    )
     throw error
   }
 }
