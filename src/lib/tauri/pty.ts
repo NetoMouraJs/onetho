@@ -21,6 +21,8 @@ export type SpawnPtyArgs = {
    * rather than guessing when the work finished.
    */
   commandLine?: string
+  /** Env var names the backend fills with the remote 9router key from the OS keychain. */
+  router9KeyEnv?: string[]
 }
 
 export async function spawnPty(args: SpawnPtyArgs): Promise<{ id: string }> {
@@ -35,6 +37,7 @@ export async function spawnPty(args: SpawnPtyArgs): Promise<{ id: string }> {
     launcherOverride: args.launcherOverride,
     env: args.env,
     commandLine: args.commandLine,
+    router9KeyEnv: args.router9KeyEnv,
   })
 }
 
@@ -54,8 +57,15 @@ export async function writePty(id: string, data: string): Promise<void> {
   await invoke('write_pty', { id, data })
 }
 
+const ptySizes = new Map<string, { cols: number; rows: number }>()
+
+export function lastPtySize(id: string): { cols: number; rows: number } | null {
+  return ptySizes.get(id) ?? null
+}
+
 export async function resizePty(id: string, cols: number, rows: number): Promise<void> {
   await invoke('resize_pty', { id, cols, rows })
+  ptySizes.set(id, { cols, rows })
 }
 
 export async function killPty(id: string): Promise<void> {
@@ -96,6 +106,25 @@ export async function getPtyTreeInfo(ptyId: string): Promise<PtyTreeInfo> {
 
 export async function killPtyTree(ptyId: string): Promise<number[]> {
   return invoke<number[]>('kill_pty_tree_cmd', { ptyId })
+}
+
+export type LeftoverProcess = {
+  pid: number
+  name: string
+  command: string
+  cwd: string | null
+  startedAtSecs: number
+  uptimeSecs: number
+  memoryMb: number
+  processCount: number
+}
+
+export async function listLeftoverProcesses(): Promise<LeftoverProcess[]> {
+  return invoke<LeftoverProcess[]>('list_leftover_processes')
+}
+
+export async function killLeftoverProcess(pid: number, startedAtSecs: number): Promise<number[]> {
+  return invoke<number[]>('kill_leftover_process', { pid, startedAtSecs })
 }
 
 export async function restartPty(args: SpawnPtyArgs & { id: string }): Promise<{ id: string }> {

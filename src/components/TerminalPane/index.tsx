@@ -6,6 +6,7 @@ import {
   GripVertical,
   Maximize2,
   Minimize2,
+  Minus,
   Network,
   PanelLeftClose,
   PanelLeftOpen,
@@ -18,18 +19,12 @@ import {
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useSessionTitle } from '../../hooks/useSidebarChatTitle'
-import { relaunchAgentPty } from '../../lib/agentRelaunch'
+import { restartAgentTab } from '../../lib/agentTabRestart'
 import { graphifyRepoOf } from '../../lib/claudeMcpConfigs'
 import { buildGhosttyCommand } from '../../lib/ghosttyCommand'
 import { useT } from '../../lib/i18n'
 import { startOrchestrationOn } from '../../lib/orchestrationOnTerminal'
 import { shouldUseNativeBackend } from '../../lib/platform'
-import {
-  conversationFields,
-  getActiveSessions,
-  savedConversationIdFor,
-  saveSession,
-} from '../../lib/sessionResume'
 import { paneDisplayName } from '../../lib/sessionTitle'
 import { completeAgentHandoff, getPtyCwd, openInVscode } from '../../lib/tauri'
 import {
@@ -129,11 +124,11 @@ export const TerminalPane = memo(function TerminalPane({
   const setLaneVisible = useProjectsStore((s) => s.setLaneVisible)
   const setTerminalTopbarPinned = useProjectsStore((s) => s.setTerminalTopbarPinned)
   const setTerminalDisabled = useProjectsStore((s) => s.setTerminalDisabled)
+  const minimizePane = useProjectsStore((s) => s.minimizePane)
   const markTerminalUsed = useProjectsStore((s) => s.markTerminalUsed)
   const setSubTabPtyId = useProjectsStore((s) => s.setSubTabPtyId)
   const setSubTabSessionId = useProjectsStore((s) => s.setSubTabSessionId)
   const setSubTabInitialInput = useProjectsStore((s) => s.setSubTabInitialInput)
-  const setSubTabHandoff = useProjectsStore((s) => s.setSubTabHandoff)
   const setSubTabCompletionUnread = useProjectsStore((s) => s.setSubTabCompletionUnread)
   const deleteTerminalWithWorktreeCleanup = useProjectsStore(
     (s) => s.deleteTerminalWithWorktreeCleanup,
@@ -165,7 +160,7 @@ export const TerminalPane = memo(function TerminalPane({
     ),
   )
 
-  // sozinho (ver XTermView, gatilho condicionado a command === 'opencode').
+  // XTermView enables this watcher only for OpenCode.
   const gsdWatcherEnabled = useProjectsStore((s) => {
     const p = s.projects.find((p) => p.id === projectId)
     return Boolean(p?.gsdWatcherEnabled)
@@ -262,40 +257,14 @@ export const TerminalPane = memo(function TerminalPane({
       requestPaneFocus(terminal.id)
       return true
     }
-    const ptyId = activeTab.ptyId
-    let restartCwd = (activeTab.cwd || terminal.cwd || '').trim()
-    if (!restartCwd) {
-      restartCwd = ((await getPtyCwd(ptyId).catch(() => null)) ?? '').trim()
-    }
-    const activeSessions = getActiveSessions()
-    const savedSession = activeSessions[activeTab.id] ?? activeSessions[ptyId] ?? null
-    const resumeSessionId =
-      activeTab.sessionId ?? savedConversationIdFor(savedSession, activeTab.type, restartCwd)
-
     try {
-      const launch = await relaunchAgentPty({
-        ptyId,
-        agent: activeTab.type,
-        runtimeProfile: activeTab.runtimeProfile,
-        extraArgs: activeTab.extraArgs,
-        sessionId: resumeSessionId,
-        cwd: restartCwd,
+      await restartAgentTab({
+        projectId,
+        terminalId: terminal.id,
+        terminalCwd: terminal.cwd,
+        tab: activeTab,
         graphifyRepo,
-        runAsAdmin: activeTab.runAsAdmin,
       })
-      if (launch.sessionId && launch.sessionId !== activeTab.sessionId) {
-        setSubTabSessionId(projectId, terminal.id, activeTab.id, launch.sessionId)
-      }
-      if (launch.sessionId) {
-        saveSession(activeTab.id, {
-          sessionId: ptyId,
-          ...conversationFields(activeTab.type, launch.sessionId),
-          cwd: restartCwd,
-          agent: activeTab.type,
-          timestamp: Date.now(),
-        })
-      }
-      window.dispatchEvent(new CustomEvent('alethe:terminal-resize-request', { detail: { ptyId } }))
       requestPaneFocus(terminal.id)
       window.setTimeout(() => requestPaneFocus(terminal.id), 160)
       return true
@@ -615,6 +584,15 @@ export const TerminalPane = memo(function TerminalPane({
               ) : null}
               <button
                 type="button"
+                className={styles.action}
+                onClick={() => minimizePane(projectId, terminal.id)}
+                title={t('ui.terminal.minimize')}
+                aria-label={t('ui.terminal.minimize')}
+              >
+                <Minus size={12} />
+              </button>
+              <button
+                type="button"
                 className={`${styles.action} ${styles.danger}`}
                 onClick={onDelete}
                 title={t('ui.sidebar.deleteTerminal')}
@@ -713,15 +691,9 @@ export const TerminalPane = memo(function TerminalPane({
                     useTerminalsStore.getState().markSuspended(activeTab.ptyId)
                     pushToast({ title: t('ui.terminal.resumeFailed'), body: String(error) })
                   }}
-                  onAgentComplete={() => {
+                  onAgentComplete={() =>
                     setSubTabCompletionUnread(projectId, terminal.id, activeTab.id, true)
-                    if (!activeTab.handoff) return
-                    void completeAgentHandoff(activeTab.handoff.id)
-                      .then(() => setSubTabHandoff(projectId, terminal.id, activeTab.id, undefined))
-                      .catch((cause) =>
-                        console.warn('[handoff] could not clean the completed packet:', cause),
-                      )
-                  }}
+                  }
                 />
               )}
               {ptyExited && !useNativeBackend ? (

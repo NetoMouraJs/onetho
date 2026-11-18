@@ -63,6 +63,7 @@ export async function agentHooksSettingsPath(
   plannerId: string,
   orchestrator = true,
   aiMemory?: { enabled: boolean; port: number } | null,
+  voice = false,
 ): Promise<string> {
   if (aiMemory === undefined) aiMemory = await liveAiMemoryPrefs()
   return invoke<string>('agent_hooks_settings_path', {
@@ -72,6 +73,7 @@ export async function agentHooksSettingsPath(
     aiMemoryPort: aiMemory?.port ?? null,
     // With Claude usage reading on, the session's status line reports its rate limits to Onetho.
     claudeUsage: await liveClaudeUsageAccess(),
+    voice,
   })
 }
 

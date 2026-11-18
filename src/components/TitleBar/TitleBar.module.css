@@ -25,6 +25,8 @@
   gap: 4px;
   flex: 0 0 auto;
   padding-right: 8px;
+  /* Room for the native macOS traffic lights; 0 elsewhere. */
+  padding-left: var(--traffic-lights-inset, 0px);
   border-right: 1px solid var(--border);
 }
 
@@ -476,6 +478,9 @@
 .antigravityUsage {
   box-shadow: inset 0 0 0 1px var(--agent-antigravity-soft);
 }
+.openrouterUsage {
+  box-shadow: inset 0 0 0 1px var(--accent-soft);
+}
 
 .usagePopover {
   position: absolute;
@@ -710,7 +715,7 @@
 .bar[data-style='three-areas'] .barStart {
   width: 100%;
   box-sizing: border-box;
-  padding: 0 8px;
+  padding: 0 8px 0 calc(8px + var(--traffic-lights-inset, 0px));
   border-right: 1px solid var(--border);
 }
 

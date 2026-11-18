@@ -13,7 +13,7 @@
     <br />
     Run Claude Code, Codex, Copilot and your shells side by side — in one local-first desktop app.
     <br />
-    <a href="./README.zh-CN.md">中文说明</a>
+    <a href="./README.pt-BR.md">Português</a> · <a href="./README.zh-CN.md">中文说明</a>
   </p>
 
   <p align="center">
@@ -191,6 +191,12 @@ Listing is a human reading your pull request, not an audit: the plugin still arr
 still goes through the trust dialog. `docs/examples/notes-plugin/` is a working plugin in plain
 JavaScript with no build step; the [plugin guide](docs/PLUGINS.md) has the full contract.
 
+For a plugin with a real toolchain, [Jev](https://github.com/Kc1t/alethe-jev) is the reference
+external plugin: its own repository, TypeScript, React and CSS Modules built by Vite into one
+script, released as a checksummed zip and installed from the catalogue.
+[Agent Voice](https://github.com/Kc1t/alethe-agent-voice) builds the same way on plugin API 3,
+following terminal output and using the app's own agent icons and dropdowns.
+
 **Stay in control**
 
 - RAM readout in the title bar; disable a terminal or suspend a whole group to get memory back.
@@ -207,8 +213,9 @@ JavaScript with no build step; the [plugin guide](docs/PLUGINS.md) has the full 
 - **Orchestration board**: a lead agent delegates units of work to Claude and Codex workers that
   Alethe runs in parallel — each optionally in its own git worktree, each reporting status, cost,
   tokens and diff on its card, and each able to ask you before it leaves its sandbox. Off by default.
-- **Local voice dictation** with an on-device model, and **cloud sync** of your preferences through
-  a GitHub sign-in — both optional.
+- **Cloud sync** of your preferences through a GitHub sign-in, optional. Voice commands and local
+  dictation come from the optional **Jev** plugin, and agents that speak their replies from the
+  optional **Agent Voice** plugin.
 - **Remote Control**: an authenticated LAN web view, paired by QR code, to follow and answer agents
   from your phone. It is off by default and uses unencrypted HTTP/WebSocket transport on the LAN, so
   enable it only on a trusted network. Clean profiles are read-only; answering agents requires a
@@ -216,6 +223,55 @@ JavaScript with no build step; the [plugin guide](docs/PLUGINS.md) has the full 
 - Spotify Now Playing, using your own Spotify app credentials in **Preferences ▸ Spotify** with
   `http://127.0.0.1:8888/callback` as the redirect URI. Current releases store those credentials in
   local profile files; see the privacy guide before exporting or sharing profile data.
+
+## Orchestration
+
+Alethe ships [`alethe`](https://github.com/Kc1t/alethe-orchestrate-skill), its official
+orchestration skill. The agent you talk to becomes the lead: it picks a playbook, writes bounded
+briefs, and hands them to cheaper Claude Code, Codex, Antigravity or Kimi workers, then reads back
+only their results. Install it from the Skills window, for every project or inside one repository,
+and tune it under **Preferences ▸ Orchestration**.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/orchestration/how-it-works-dark.svg">
+    <img src="./docs/assets/orchestration/how-it-works-light.svg" alt="You ask your agent to orchestrate a refactor. The lead agent picks a playbook, writes the briefs and dry-runs the plan, then orchestrate.py runs one wave of workers: Claude Code on haiku, read-only; Codex at low effort, writing in its own worktree; Antigravity, read-only. They leave result.md, diff.patch and outcome.json while full transcripts stay on disk. The lead reads only the results, checks, integrates and marks them, runs the next wave, and finally writes the orchestration report" width="900">
+  </picture>
+</p>
+
+Every orchestration follows a playbook. **Preferences ▸ Playbooks** shows each one as a canvas of
+blocks: drag workers, checks and conditions from the palette, connect their ports, and drop a
+condition on a worker to switch its model. Conditions cover the task, quota (a provider low or
+spare, a window past a percent) and cost (budget low, the model's price per million tokens, the
+spend so far). Pick a task, check result, budget and spend to light the path that would run, switch
+between the base, savings and aggressive profiles, and read Claude and Codex quota live. Saving
+writes `alethe-playbooks.yaml`, the file the skill plans with.
+
+<p align="center">
+  <img src="./docs/assets/orchestration/playbook-scout-then-build.png" alt="The scout-then-build playbook as a flow: planner, four scouts, a checker when they disagree, planner, builder, and a fixer when checks fail" width="100%">
+</p>
+
+Workers hand back results, not transcripts, so the lead's context stays small and the spend is
+what each CLI reported, never an estimate.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/orchestration/savings-dark.svg">
+    <img src="./docs/assets/orchestration/savings-light.svg" alt="Two hand-drawn bar charts. Left: one Claude haiku worker on the same one-line task used 76,160 tokens and $0.16 with version 11, and 38,157 tokens and $0.08 with version 12. Right: in a real two-worker run, 5.0 KB of worker transcripts stayed on disk while the lead read 595 bytes of results" width="820">
+  </picture>
+</p>
+
+**The skill also works without Alethe.** It is a standalone agent skill with its own repository,
+[Kc1t/alethe-orchestrate-skill](https://github.com/Kc1t/alethe-orchestrate-skill), and runs in
+Claude Code, Codex and any agent that reads `SKILL.md`:
+
+```sh
+npx skills add Kc1t/alethe-orchestrate-skill
+```
+
+Its [README](https://github.com/Kc1t/alethe-orchestrate-skill#readme) covers the Claude Code and
+Codex plugins, the `/alethe` commands, the playbooks and the cost report. Changes to the skill go to
+that repository first; `npm run skill:sync` brings them into Alethe.
 
 ## Core Concepts
 
@@ -346,6 +402,20 @@ See Alethe in real development workflows and learn how to orchestrate coding age
   </tr>
   <tr>
     <td>
+      <a href="https://www.youtube.com/watch?v=ujW-e6w3NQA">
+        <img src="https://i.ytimg.com/vi/ujW-e6w3NQA/hqdefault.jpg" alt="How to Orchestrate AI Agents with a FREE Skill" width="100%">
+      </a>
+    </td>
+    <td>
+      <strong><a href="https://www.youtube.com/watch?v=ujW-e6w3NQA">How to Orchestrate AI Agents with a FREE Skill</a></strong>
+      <br><br>
+      A tutorial on orchestrating AI coding agents with the free Alethe Orchestrate skill.
+      <br><br>
+      <sub>Kauã Miguel - Dev · Portuguese</sub>
+    </td>
+  </tr>
+  <tr>
+    <td>
       <a href="https://www.youtube.com/watch?v=reUN7CkMbgM&amp;t=100s">
         <img src="https://i.ytimg.com/vi/reUN7CkMbgM/hqdefault.jpg" alt="A Day in the Life of a Software Developer — Devlog 1" width="100%">
       </a>
@@ -375,16 +445,23 @@ Thanks to everyone helping shape Alethe.
   <a href="https://github.com/HumbertoCG18"><img src="https://github.com/HumbertoCG18.png?size=100" width="80" height="80" alt="HumbertoCG18" title="HumbertoCG18" /></a>
   <a href="https://github.com/Jbnado"><img src="https://github.com/Jbnado.png?size=100" width="80" height="80" alt="Jbnado" title="Jbnado" /></a>
   <a href="https://github.com/MiguelSilvaPorto"><img src="https://github.com/MiguelSilvaPorto.png?size=100" width="80" height="80" alt="MiguelSilvaPorto" title="MiguelSilvaPorto" /></a>
+  <a href="https://github.com/SrAmaral"><img src="https://github.com/SrAmaral.png?size=100" width="80" height="80" alt="SrAmaral" title="SrAmaral" /></a>
   <a href="https://github.com/HayatoG"><img src="https://github.com/HayatoG.png?size=100" width="80" height="80" alt="HayatoG" title="HayatoG" /></a>
   <a href="https://github.com/Kc1tDev"><img src="https://github.com/Kc1tDev.png?size=100" width="80" height="80" alt="Kc1tDev" title="Kc1tDev" /></a>
   <a href="https://github.com/lucapohl-angel"><img src="https://github.com/lucapohl-angel.png?size=100" width="80" height="80" alt="lucapohl-angel" title="lucapohl-angel" /></a>
   <a href="https://github.com/slegarraga"><img src="https://github.com/slegarraga.png?size=100" width="80" height="80" alt="slegarraga" title="slegarraga" /></a>
   <a href="https://github.com/HyperTechDevelopment"><img src="https://github.com/HyperTechDevelopment.png?size=100" width="80" height="80" alt="HyperTechDevelopment" title="HyperTechDevelopment" /></a>
-  <a href="https://github.com/S1LV4"><img src="https://github.com/S1LV4.png?size=100" width="80" height="80" alt="S1LV4" title="S1LV4" /></a>
-  <a href="https://github.com/pinhaum"><img src="https://github.com/pinhaum.png?size=100" width="80" height="80" alt="pinhaum" title="pinhaum" /></a>
   <a href="https://github.com/AiurArtanis"><img src="https://github.com/AiurArtanis.png?size=100" width="80" height="80" alt="AiurArtanis" title="AiurArtanis" /></a>
+  <a href="https://github.com/Tavaressan"><img src="https://github.com/Tavaressan.png?size=100" width="80" height="80" alt="Tavaressan" title="Tavaressan" /></a>
+  <a href="https://github.com/S1LV4"><img src="https://github.com/S1LV4.png?size=100" width="80" height="80" alt="S1LV4" title="S1LV4" /></a>
+  <a href="https://github.com/Jhonata-Anderson"><img src="https://github.com/Jhonata-Anderson.png?size=100" width="80" height="80" alt="Jhonata-Anderson" title="Jhonata-Anderson" /></a>
+  <a href="https://github.com/pinhaum"><img src="https://github.com/pinhaum.png?size=100" width="80" height="80" alt="pinhaum" title="pinhaum" /></a>
   <a href="https://github.com/1arley"><img src="https://github.com/1arley.png?size=100" width="80" height="80" alt="1arley" title="1arley" /></a>
+  <a href="https://github.com/afthex"><img src="https://github.com/afthex.png?size=100" width="80" height="80" alt="afthex" title="afthex" /></a>
+  <a href="https://github.com/MarkHiarley"><img src="https://github.com/MarkHiarley.png?size=100" width="80" height="80" alt="MarkHiarley" title="MarkHiarley" /></a>
   <a href="https://github.com/potatoiscompiled"><img src="https://github.com/potatoiscompiled.png?size=100" width="80" height="80" alt="potatoiscompiled" title="potatoiscompiled" /></a>
+  <a href="https://github.com/Arthurandrealmeida"><img src="https://github.com/Arthurandrealmeida.png?size=100" width="80" height="80" alt="Arthurandrealmeida" title="Arthurandrealmeida" /></a>
+  <a href="https://github.com/Erikkaso"><img src="https://github.com/Erikkaso.png?size=100" width="80" height="80" alt="Erikkaso" title="Erikkaso" /></a>
   <a href="https://github.com/GustavoAlmeidaDoNascimento"><img src="https://github.com/GustavoAlmeidaDoNascimento.png?size=100" width="80" height="80" alt="GustavoAlmeidaDoNascimento" title="GustavoAlmeidaDoNascimento" /></a>
   <a href="https://github.com/chintanparmar011"><img src="https://github.com/chintanparmar011.png?size=100" width="80" height="80" alt="chintanparmar011" title="chintanparmar011" /></a>
   <a href="https://github.com/jo20132012"><img src="https://github.com/jo20132012.png?size=100" width="80" height="80" alt="jo20132012" title="jo20132012" /></a>
@@ -393,9 +470,9 @@ Thanks to everyone helping shape Alethe.
   <a href="https://github.com/rlevidev"><img src="https://github.com/rlevidev.png?size=100" width="80" height="80" alt="rlevidev" title="rlevidev" /></a>
   <a href="https://github.com/mapsiva"><img src="https://github.com/mapsiva.png?size=100" width="80" height="80" alt="mapsiva" title="mapsiva" /></a>
   <a href="https://github.com/moisesz10"><img src="https://github.com/moisesz10.png?size=100" width="80" height="80" alt="moisesz10" title="moisesz10" /></a>
-  <a href="https://github.com/Bakurin0"><img src="https://github.com/Bakurin0.png?size=100" width="80" height="80" alt="Bakurin0" title="Bakurin0" /></a>
-  <a href="https://github.com/SrAmaral"><img src="https://github.com/SrAmaral.png?size=100" width="80" height="80" alt="SrAmaral" title="SrAmaral" /></a>
+  <a href="https://github.com/Bakurinodev"><img src="https://github.com/Bakurinodev.png?size=100" width="80" height="80" alt="Bakurinodev" title="Bakurinodev" /></a>
   <a href="https://github.com/diegoliveiraa"><img src="https://github.com/diegoliveiraa.png?size=100" width="80" height="80" alt="diegoliveiraa" title="diegoliveiraa" /></a>
+  <a href="https://github.com/aryansk"><img src="https://github.com/aryansk.png?size=100" width="80" height="80" alt="aryansk" title="aryansk" /></a>
   <a href="https://github.com/VicktorMS"><img src="https://github.com/VicktorMS.png?size=100" width="80" height="80" alt="VicktorMS" title="VicktorMS" /></a>
   <a href="https://github.com/rad4manthys"><img src="https://github.com/rad4manthys.png?size=100" width="80" height="80" alt="rad4manthys" title="rad4manthys" /></a>
   <a href="https://github.com/valencestoredigital-design"><img src="https://github.com/valencestoredigital-design.png?size=100" width="80" height="80" alt="valencestoredigital-design" title="valencestoredigital-design" /></a>
@@ -407,16 +484,19 @@ Thanks to everyone helping shape Alethe.
   <a href="https://github.com/eudehh"><img src="https://github.com/eudehh.png?size=100" width="80" height="80" alt="eudehh" title="eudehh" /></a>
   <a href="https://github.com/dudukings1"><img src="https://github.com/dudukings1.png?size=100" width="80" height="80" alt="dudukings1" title="dudukings1" /></a>
   <a href="https://github.com/davidwallaci"><img src="https://github.com/davidwallaci.png?size=100" width="80" height="80" alt="davidwallaci" title="davidwallaci" /></a>
+  <a href="https://github.com/beb0pp"><img src="https://github.com/beb0pp.png?size=100" width="80" height="80" alt="beb0pp" title="beb0pp" /></a>
   <a href="https://github.com/tomatotomata"><img src="https://github.com/tomatotomata.png?size=100" width="80" height="80" alt="tomatotomata" title="tomatotomata" /></a>
   <a href="https://github.com/ThiagoSales17"><img src="https://github.com/ThiagoSales17.png?size=100" width="80" height="80" alt="ThiagoSales17" title="ThiagoSales17" /></a>
   <a href="https://github.com/opedrooz"><img src="https://github.com/opedrooz.png?size=100" width="80" height="80" alt="opedrooz" title="opedrooz" /></a>
   <a href="https://github.com/devmatheusmota"><img src="https://github.com/devmatheusmota.png?size=100" width="80" height="80" alt="devmatheusmota" title="devmatheusmota" /></a>
+  <a href="https://github.com/Laiirton"><img src="https://github.com/Laiirton.png?size=100" width="80" height="80" alt="Laiirton" title="Laiirton" /></a>
   <a href="https://github.com/JohnPss"><img src="https://github.com/JohnPss.png?size=100" width="80" height="80" alt="JohnPss" title="JohnPss" /></a>
   <a href="https://github.com/GabrielKLopes"><img src="https://github.com/GabrielKLopes.png?size=100" width="80" height="80" alt="GabrielKLopes" title="GabrielKLopes" /></a>
   <a href="https://github.com/floze-the-genius"><img src="https://github.com/floze-the-genius.png?size=100" width="80" height="80" alt="floze-the-genius" title="floze-the-genius" /></a>
   <a href="https://github.com/claude"><img src="https://github.com/claude.png?size=100" width="80" height="80" alt="claude" title="claude" /></a>
-  <a href="https://github.com/aryansk"><img src="https://github.com/aryansk.png?size=100" width="80" height="80" alt="aryansk" title="aryansk" /></a>
+  <a href="https://github.com/BrunoSSantana"><img src="https://github.com/BrunoSSantana.png?size=100" width="80" height="80" alt="BrunoSSantana" title="BrunoSSantana" /></a>
   <a href="https://github.com/sousaakira"><img src="https://github.com/sousaakira.png?size=100" width="80" height="80" alt="sousaakira" title="sousaakira" /></a>
+  <a href="https://github.com/AFSFerreira"><img src="https://github.com/AFSFerreira.png?size=100" width="80" height="80" alt="AFSFerreira" title="AFSFerreira" /></a>
   <!-- contributors:end -->
 </p>
 

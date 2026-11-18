@@ -50,6 +50,14 @@ describe('preference normalization', () => {
     expect(preferences.terminalFontFamily).toBe(DEFAULT_TERMINAL_FONT_FAMILY)
   })
 
+  it('launches Claude in the classic renderer unless the profile asked for fullscreen', () => {
+    expect(DEFAULT_PREFERENCES.claudeFullscreen).toBe(false)
+    expect(normalizePreferences({}).claudeFullscreen).toBe(false)
+    expect(
+      normalizePreferences({ ...DEFAULT_PREFERENCES, claudeFullscreen: true }).claudeFullscreen,
+    ).toBe(true)
+  })
+
   it('keeps a configured shell and trims it', () => {
     const preferences = normalizePreferences({
       ...DEFAULT_PREFERENCES,
@@ -351,20 +359,42 @@ describe('preference normalization', () => {
     ).toBe(false)
   })
 
-  it('defaults motion to animated and preserves a reduced-motion choice', () => {
-    expect(normalizePreferences(undefined).motionPreference).toBe('animated')
+  it('defaults motion to reduced and preserves an animated choice', () => {
+    expect(normalizePreferences(undefined).motionPreference).toBe('reduced')
     expect(
       normalizePreferences({
         ...DEFAULT_PREFERENCES,
-        motionPreference: 'reduced',
+        motionPreference: 'animated',
       }).motionPreference,
-    ).toBe('reduced')
+    ).toBe('animated')
     expect(
       normalizePreferences({
         ...DEFAULT_PREFERENCES,
         motionPreference: 'unsupported' as 'reduced',
       }).motionPreference,
-    ).toBe('animated')
+    ).toBe('reduced')
+  })
+
+  it('starts a fresh install on the default look and keeps a saved one', () => {
+    const fresh = normalizePreferences(undefined)
+    expect(fresh.uiTheme).toBe('elite-pure-black')
+    expect(fresh.visualStyle).toBe('clean')
+    expect(fresh.uiZoom).toBe(0.9)
+    expect(fresh.terminalTheme).toBe('dark-lemon')
+    expect(fresh.leftSidebarWidth).toBe(380)
+    expect(fresh.rightSidebarWidth).toBe(420)
+
+    const saved = normalizePreferences({
+      ...DEFAULT_PREFERENCES,
+      uiTheme: 'nord',
+      visualStyle: 'normal',
+      uiZoom: 1,
+      terminalTheme: null,
+    })
+    expect(saved.uiTheme).toBe('nord')
+    expect(saved.visualStyle).toBe('normal')
+    expect(saved.uiZoom).toBe(1)
+    expect(saved.terminalTheme).toBeNull()
   })
 
   it('clamps Pomodoro durations to a sane range and falls back on invalid input', () => {
@@ -396,6 +426,30 @@ describe('preference normalization', () => {
     })
 
     expect(preferences.pomodoroSession).toMatchObject({ status: 'finished', endsAt: null })
+  })
+})
+
+describe('router9 preference normalization', () => {
+  it('backfills remote-mode fields for preferences saved before they existed', () => {
+    const { router9 } = normalizePreferences({
+      router9: { enabled: true, source: 'managed', port: 20128, apiKey: 'k' },
+    } as never)
+    expect(router9.mode).toBe('local')
+    expect(router9.remoteUrl).toBe('')
+    expect(router9.models).toEqual({ opus: '', sonnet: '', haiku: '', codex: '' })
+  })
+
+  it('keeps a remote gateway and trims its URL down to the base', () => {
+    const { router9 } = normalizePreferences({
+      router9: {
+        mode: 'remote',
+        remoteUrl: 'https://gw.example.com/v1/',
+        models: { opus: 'cc/opus', codex: 'cx/sol' },
+      },
+    } as never)
+    expect(router9.mode).toBe('remote')
+    expect(router9.remoteUrl).toBe('https://gw.example.com')
+    expect(router9.models).toEqual({ opus: 'cc/opus', sonnet: '', haiku: '', codex: 'cx/sol' })
   })
 })
 
@@ -490,14 +544,20 @@ describe('projects file migration', () => {
   })
 
   it('starts a profile with no saved file with every usage provider off', () => {
-    const off = { claude: false, codex: false, antigravity: false, kimi: false }
+    const off = {
+      claude: false,
+      codex: false,
+      antigravity: false,
+      kimi: false,
+      openrouter: false,
+    }
     expect(EMPTY_PROJECTS_FILE.preferences.usageAccess).toEqual(off)
     expect(normalizePreferences(undefined).usageAccess).toEqual(off)
   })
 
   it('keeps every usage provider on for a file saved before the usage consent existed', () => {
     const { usageAccess: _usageAccess, ...savedBeforeConsent } = DEFAULT_PREFERENCES
-    const on = { claude: true, codex: true, antigravity: true, kimi: true }
+    const on = { claude: true, codex: true, antigravity: true, kimi: true, openrouter: false }
 
     for (const version of [6, 8, 9]) {
       const migrated = migrate({ ...EMPTY_PROJECTS_FILE, version, preferences: savedBeforeConsent })
@@ -519,18 +579,21 @@ describe('projects file migration', () => {
       codex: false,
       antigravity: false,
       kimi: false,
+      openrouter: false,
     })
     expect(saved({ claude: true, codex: false, antigravity: true })).toEqual({
       claude: true,
       codex: false,
       antigravity: true,
       kimi: false,
+      openrouter: false,
     })
     expect(saved({ codex: true })).toEqual({
       claude: false,
       codex: true,
       antigravity: false,
       kimi: false,
+      openrouter: false,
     })
   })
 
@@ -551,6 +614,7 @@ describe('projects file migration', () => {
       codex: false,
       antigravity: true,
       kimi: true,
+      openrouter: false,
     })
   })
 })

@@ -10,7 +10,17 @@ import { useEffect, useRef } from 'react'
 import { recordAgentActivityInput } from '../../lib/activityTracker'
 import { cliPathMatchesAgent } from '../../lib/agentCliPath'
 import { AgentCompletionMonitor } from '../../lib/agentCompletionMonitor'
-import { deliverOpenCodePrompt } from '../../lib/agentPromptDelivery'
+import { registerAgentInput } from '../../lib/agentInputRegistry'
+import {
+  deliverCodexPrompt,
+  deliverOpenCodePrompt,
+  looksLikeChoicePrompt,
+  PaneHiddenError,
+  pasteAndSubmit,
+  readLiveScreen,
+  readRecentLines,
+  TerminalPromptOpenError,
+} from '../../lib/agentPromptDelivery'
 import { resolveAgentCliCommand, resolveCustomAgentArgs } from '../../lib/agentProviders'
 import { preparePtyRuntimeLaunch } from '../../lib/agentRuntimeAdapter'
 import {
@@ -30,7 +40,7 @@ import { isOrchestratorShellPty } from '../../lib/orchestratorShells'
 import { isWindows } from '../../lib/platform'
 import { ptyLaunchTarget } from '../../lib/ptyLaunchTarget'
 import { usePtyPanelVisible } from '../../lib/ptyVisibility'
-import { router9EnvFor } from '../../lib/router9'
+import { router9ArgsFor, router9EnvFor, router9KeyEnvFor } from '../../lib/router9'
 import {
   claimDiscoveredSession,
   claimMostRecentSession,
@@ -91,6 +101,7 @@ import type { AgentHookPayload } from '../../stores/agentCanvasStore'
 import { useProjectsStore } from '../../stores/projectsStore'
 import { useTerminalsStore } from '../../stores/terminalsStore'
 import { useUiStore } from '../../stores/uiStore'
+import { keepTerminalTextareaClean } from './terminalComposition'
 import {
   loadTerminalFonts,
   remeasuredFontFamily,
@@ -103,7 +114,7 @@ import {
   getTerminalScrollbackRows,
   getWheelScrollLines,
   normalizePastedText,
-  shouldScrollHostScrollback,
+  resolveWheelTarget,
 } from './terminalInput'
 import {
   type DetectedTerminalLink,
@@ -111,6 +122,14 @@ import {
   getLogicalTerminalLine,
   makeXtermLink,
 } from './terminalLinks'
+import { resetTerminalModes } from './terminalModes'
+import { captureTerminalPaste } from './terminalPaste'
+import {
+  captureViewportAnchor,
+  restoreViewport,
+  restoreViewportAnchor,
+  viewportDistanceFromBottom,
+} from './terminalViewport'
 import {
   TERMINAL_WRITE_FALLBACK_MS,
   TERMINAL_WRITE_FRAME_BUDGET,
@@ -118,8 +137,7 @@ import {
   writePtyChunked,
   writePtyWithTimeout,
 } from './terminalWrite'
-import { captureTerminalPaste } from './terminalPaste'
-import { getXtermTheme, type LinkActionState } from './xtermThemes'
+import { getMinimumContrastRatio, getXtermTheme, type LinkActionState } from './xtermThemes'
 
 // Early exits trigger a single fresh-session retry.
 const EARLY_EXIT_MS = 4000
@@ -349,6 +367,36 @@ export function useXtermSession(params: {
     let lastRows = 0
     let forceNextResize = false
     let completionMonitor: AgentCompletionMonitor | null = null
+    let unregisterAgentInput: (() => void) | null = null
+    // Plugins submit through this, never raw writes: it knows the paste mode and arms the monitor.
+    const registerAgentInputFor = (id: string) => {
+      if (disposed) return
+      unregisterAgentInput?.()
+      unregisterAgentInput = registerAgentInput(id, {
+        submit: async (text) => {
+          const refuseOnChoiceMenu = () => {
+            if (!isPanelVisibleRef.current) throw new PaneHiddenError()
+            if (looksLikeChoicePrompt(readLiveScreen(terminal.buffer.active, terminal.rows))) {
+              throw new TerminalPromptOpenError()
+            }
+          }
+          refuseOnChoiceMenu()
+          useTerminalsStore.getState().recordIo(id)
+          await pasteAndSubmit(text, {
+            writeChunked: (value) => writePtyChunked(id, value, terminal.modes.bracketedPasteMode),
+            write: (data) => writePty(id, data),
+            sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)),
+            beforeEnter: () => {
+              refuseOnChoiceMenu()
+              completionMonitor?.armForSubmit(text)
+              recordAgentActivityInput(id, text)
+            },
+          })
+        },
+        interrupt: () => writePty(id, ''),
+        readScreen: (lines) => readRecentLines(terminal.buffer.active, lines),
+      })
+    }
     let linkProviderDisposable: { dispose: () => void } | null = null
     let linkScrollDisposable: { dispose: () => void } | null = null
     let writeRecoveryPending = false
@@ -382,6 +430,7 @@ export function useXtermSession(params: {
       fontFamily: resolveTerminalFontFamily(preferences.terminalFontFamily),
       fontSize: TERMINAL_FONT_SIZE,
       theme: getXtermTheme(terminalTheme),
+      minimumContrastRatio: getMinimumContrastRatio(terminalTheme),
     })
     const fitAddon = new FitAddon()
     const searchAddon = new SearchAddon()
@@ -391,6 +440,9 @@ export function useXtermSession(params: {
     terminal.loadAddon(new Unicode11Addon())
     terminal.unicode.activeVersion = '11'
     terminal.open(container)
+    const releaseTextareaClean = terminal.textarea
+      ? keepTerminalTextareaClean(terminal.textarea)
+      : () => {}
     terminalRef.current = terminal
     const clampHorizontalScroll = () => {
       container.scrollLeft = 0
@@ -486,6 +538,20 @@ export function useXtermSession(params: {
       scheduleFlush()
     }
 
+    // Wait until queued output is parsed before checking the modes it left behind.
+    const afterQueuedWrites = (then: () => void) => {
+      const parsed = () => {
+        if (disposed) return
+        try {
+          terminal.write('', then)
+        } catch {
+          /* The terminal may have been disposed meanwhile. */
+        }
+      }
+      if (pendingWriteLength === 0) parsed()
+      else pendingWriteDrainResolvers.push(parsed)
+    }
+
     const queueTerminalWriteAndWait = (chunk: string): Promise<void> => {
       if (!chunk) return Promise.resolve()
       return new Promise((resolve) => {
@@ -494,16 +560,14 @@ export function useXtermSession(params: {
       })
     }
 
-    // Scrollback replays go straight to xterm instead of through the frame
-    // budget: a few MB of history split into 16 KB slices costs one rendered
-    // frame each, which is what made switching panes crawl from the top of the
-    // buffer down to the prompt.
-    const writeReplayAtOnce = (replay: string): Promise<void> =>
+    // Replay history in one write; an optional callback restores the reader instead of the bottom.
+    const writeReplayAtOnce = (replay: string, afterReplay?: () => void): Promise<void> =>
       new Promise((resolve) => {
         try {
           terminal.write(replay, () => {
             try {
-              terminal.scrollToBottom()
+              if (afterReplay) afterReplay()
+              else terminal.scrollToBottom()
             } catch {
               /* The terminal may have been disposed before scrolling. */
             }
@@ -520,18 +584,30 @@ export function useXtermSession(params: {
     }
 
     const onWheel = (event: WheelEvent) => {
-      // Let alternate-screen TUIs handle their own mouse tracking and scrolling.
+      const id = ptyIdRef.current
+      const runtime = id ? useTerminalsStore.getState().byPtyId[id] : undefined
+      // Nobody has marked the session dead yet, so keep the wheel with the app.
+      const target = resolveWheelTarget({
+        bufferType: terminal.buffer.active.type,
+        shiftKey: event.shiftKey,
+        sessionAlive: runtime?.alive !== false,
+      })
+      if (target === 'app') return
 
-      if (!shouldScrollHostScrollback(terminal.buffer.active.type, event.shiftKey)) return
       const lines = getWheelScrollLines(event, getTerminalLineHeight())
       if (lines === 0) return
       event.preventDefault()
       event.stopPropagation()
-      try {
-        terminal.scrollLines(lines)
-      } catch {
-        /* Ignore scrolling after the terminal has been disposed. */
+      const scroll = () => {
+        try {
+          terminal.scrollLines(lines)
+        } catch {
+          /* Ignore scrolling after the terminal has been disposed. */
+        }
       }
+      // Restore the history buffer before scrolling a pane whose fullscreen owner died.
+      if (target === 'recover') resetTerminalModes(terminal, scroll)
+      else scroll()
     }
     container.addEventListener('wheel', onWheel, { passive: false, capture: true })
 
@@ -562,12 +638,18 @@ export function useXtermSession(params: {
       }, 5_000)
     }
 
+    // Right-click, the paste event and Ctrl+V can all deliver the same clipboard once; drop an
+    // identical payload that arrives again right after the first.
+    let lastPaste = { text: '', at: 0 }
     const pasteText = (raw: string) => {
       try {
         if (disposed || readOnly || !raw) return
         const id = ptyIdRef.current
         if (!id) return
         const text = normalizePastedText(raw)
+        const now = Date.now()
+        if (text === lastPaste.text && now - lastPaste.at < 2_000) return
+        lastPaste = { text, at: now }
         useTerminalsStore.getState().recordIo(id)
         recordPromptInput(text)
         inputWriteChain = inputWriteChain
@@ -622,7 +704,42 @@ export function useXtermSession(params: {
 
     terminal.attachCustomKeyEventHandler((event) => {
       if (event.type !== 'keydown') return true
+      // xterm.js sends a bare \r for Shift+Enter, so it submitted instead of
+      // adding a line. ESC+CR is what Claude Code's /terminal-setup binds: both
+      // Claude Code and Codex read it as a newline, and line editors ignore it.
+      if (
+        event.key === 'Enter' &&
+        event.shiftKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        !event.isComposing
+      ) {
+        event.preventDefault()
+        const id = ptyIdRef.current
+        if (!readOnly && id) queueInput(id, '\x1b\r')
+        return false
+      }
       const ctrl = event.ctrlKey || event.metaKey
+      // Ctrl/Cmd+Enter sends right away, like Warp: in Claude Code that is its
+      // ctrl+x ctrl+s "send now", which submits the typed text whether the
+      // agent is idle or mid-turn (where a plain Enter only queues it).
+      if (
+        ctrl &&
+        event.key === 'Enter' &&
+        !event.shiftKey &&
+        !event.altKey &&
+        !event.isComposing &&
+        command === 'claude'
+      ) {
+        event.preventDefault()
+        const id = ptyIdRef.current
+        if (!readOnly && id) {
+          queueInput(id, '\x18')
+          window.setTimeout(() => queueInput(id, '\x13'), 60)
+        }
+        return false
+      }
       if (!ctrl || event.altKey) return true
 
       const key = event.key.toLowerCase()
@@ -779,8 +896,7 @@ export function useXtermSession(params: {
 
       const rect = container.getBoundingClientRect()
       if (rect.width < 50 || rect.height < 30) return
-      const activeBuffer = terminal.buffer.active
-      const distanceFromBottom = Math.max(0, activeBuffer.baseY - activeBuffer.viewportY)
+      const distanceFromBottom = viewportDistanceFromBottom(terminal)
       try {
         fitAddon.fit()
       } catch (error) {
@@ -788,9 +904,7 @@ export function useXtermSession(params: {
 
         return
       }
-      const resizedBuffer = terminal.buffer.active
-      if (distanceFromBottom === 0) terminal.scrollToBottom()
-      else terminal.scrollToLine(Math.max(0, resizedBuffer.baseY - distanceFromBottom))
+      restoreViewport(terminal, distanceFromBottom)
       try {
         terminal.refresh(0, Math.max(0, terminal.rows - 1))
       } catch (error) {
@@ -862,20 +976,33 @@ export function useXtermSession(params: {
     const doResync = async () => {
       const id = ptyIdRef.current
       if (!id || disposed) return
+      const arrivedDuringReplay: string[] = []
       try {
-        const arrivedDuringFetch: string[] = []
-        resyncCaptureRef = arrivedDuringFetch
+        const anchor = captureViewportAnchor(terminal)
+        resyncCaptureRef = arrivedDuringReplay
         const replay = await attachPty(id)
-        resyncCaptureRef = null
         if (disposed) return
         terminal.reset()
         pendingWrites = []
         pendingWriteLength = 0
         cancelScheduledFlush()
-        if (replay) void writeReplayAtOnce(replay)
-        for (const chunk of arrivedDuringFetch) queueTerminalWrite(chunk)
+        // ADR-014: hold live output until replay parsing finishes, then restore after both drain.
+        if (replay) await writeReplayAtOnce(replay, () => {})
+        resyncCaptureRef = null
+        if (disposed) return
+        for (const chunk of arrivedDuringReplay) queueTerminalWrite(chunk)
+        afterQueuedWrites(() => {
+          const restore = () => restoreViewportAnchor(terminal, anchor)
+          if (useTerminalsStore.getState().byPtyId[id]?.alive === false) {
+            resetTerminalModes(terminal, restore)
+            return
+          }
+          restore()
+        })
       } catch {
         resyncCaptureRef = null
+        if (disposed) return
+        for (const chunk of arrivedDuringReplay) queueTerminalWrite(chunk)
       }
     }
     const catchUpHiddenOutput = async (): Promise<boolean> => {
@@ -888,6 +1015,11 @@ export function useXtermSession(params: {
       if (disposed) return true
       if (missed) queueTerminalWrite(missed)
       for (const chunk of held) queueTerminalWrite(chunk)
+      afterQueuedWrites(() => {
+        if (useTerminalsStore.getState().byPtyId[id]?.alive === false) {
+          resetTerminalModes(terminal)
+        }
+      })
       return missed !== null
     }
     const panelSync = { catchUp: catchUpHiddenOutput, resync: doResync }
@@ -902,7 +1034,7 @@ export function useXtermSession(params: {
       const dataUnlisten = await listenPtyData(id, (chunk) => {
         useTerminalsStore.getState().recordIo(id)
         if (resyncCaptureRef) resyncCaptureRef.push(chunk)
-        if (heldLiveOutput) heldLiveOutput.push(chunk)
+        else if (heldLiveOutput) heldLiveOutput.push(chunk)
         else queueTerminalWrite(chunk)
         completionMonitor?.handleOutput(chunk)
         inspectChunk?.(chunk)
@@ -936,11 +1068,12 @@ export function useXtermSession(params: {
       if (attachedSessionId !== sessionId) emitSessionId?.(attachedSessionId)
       ptyIdRef.current = existingId
       useTerminalsStore.getState().registerPty(existingId)
+      registerAgentInputFor(existingId)
       onSpawnedRef.current?.(existingId)
 
       void setPtyVisible(existingId, isPanelVisibleRef.current).catch(() => {})
 
-      if (command === 'claude' || command === 'codex' || command === 'opencode') {
+      if (command && !isShellAgentType(command)) {
         completionMonitor = new AgentCompletionMonitor({
           ptyId: existingId,
           agent: command,
@@ -978,6 +1111,12 @@ export function useXtermSession(params: {
           return
         }
         useTerminalsStore.getState().markExited(existingId)
+        afterQueuedWrites(() => {
+          // Checked once the output is in: a restart may have revived the pane meanwhile.
+          if (useTerminalsStore.getState().byPtyId[existingId]?.alive === false) {
+            resetTerminalModes(terminal)
+          }
+        })
         completionMonitor?.dispose()
         completionMonitor = null
         removeSession(sessionPersistenceKey)
@@ -1233,15 +1372,23 @@ export function useXtermSession(params: {
               runtimeProfile,
               [...customDefaultArgs, ...(extraArgs ?? [])],
               env,
+              {
+                claudeFullscreen: useProjectsStore.getState().preferences.claudeFullscreen,
+              },
             )
           : { args: extraArgs ?? [], env }
 
         // Read at spawn time rather than through a selector: the PTY environment is fixed when the
         // process starts, so turning 9router off only ever affects terminals opened afterwards.
+        const router9Config = useProjectsStore.getState().preferences.router9
+        const routeThroughRouter9 = Boolean(useRouter9 && command && router9Config?.enabled)
         const router9Env =
-          useRouter9 && command
-            ? router9EnvFor(command, useProjectsStore.getState().preferences.router9)
-            : {}
+          routeThroughRouter9 && command ? router9EnvFor(command, router9Config) : {}
+        const router9Args =
+          routeThroughRouter9 && command ? router9ArgsFor(command, router9Config) : []
+        // The backend fills these from the keychain and fails the launch when no key is saved.
+        const router9KeyEnv =
+          routeThroughRouter9 && command ? router9KeyEnvFor(command, router9Config) : []
         // The Codex hook forwarder and MCP bridge are shared per port, so they read the terminal
         // they belong to from here instead of from a path Codex would ask to trust again.
         const launchEnv = {
@@ -1343,7 +1490,8 @@ export function useXtermSession(params: {
               hooksSettingsPath,
             )
           : { args: preparedRuntime.args, sessionId: undefined, createdSession: false }
-        const spawnArgs = launch.args.length > 0 ? launch.args : undefined
+        const launchArgs = [...launch.args, ...router9Args]
+        const spawnArgs = launchArgs.length > 0 ? launchArgs : undefined
         attachedSessionId = launch.sessionId
         if (command && command !== 'shell') {
           console.info(
@@ -1399,6 +1547,7 @@ export function useXtermSession(params: {
             runAsAdmin: !command && runAsAdmin,
             launcherOverride,
             env: launchEnv,
+            router9KeyEnv: router9KeyEnv.length > 0 ? router9KeyEnv : undefined,
           })
         } finally {
           releaseSpawnSlot()
@@ -1414,6 +1563,7 @@ export function useXtermSession(params: {
         ptyIdRef.current = response.id
         if (command === 'codex') forgetCodexPaneInput(response.id)
         useTerminalsStore.getState().registerPty(response.id)
+        registerAgentInputFor(response.id)
         onSpawnedRef.current?.(response.id)
 
         // Apply visibility before the first output batch.
@@ -1427,7 +1577,7 @@ export function useXtermSession(params: {
           registerSessionClaim(command, cwd, attachedSessionId, response.id)
         }
 
-        if (command === 'claude' || command === 'codex' || command === 'opencode') {
+        if (command && !isShellAgentType(command)) {
           completionMonitor = new AgentCompletionMonitor({
             ptyId: response.id,
             agent: command,
@@ -1596,6 +1746,12 @@ export function useXtermSession(params: {
             )
           }
           useTerminalsStore.getState().markExited(response.id)
+          afterQueuedWrites(() => {
+            // Checked once the output is in: a restart may have revived the pane meanwhile.
+            if (useTerminalsStore.getState().byPtyId[response.id]?.alive === false) {
+              resetTerminalModes(terminal)
+            }
+          })
           completionMonitor?.dispose()
           completionMonitor = null
 
@@ -1648,6 +1804,16 @@ export function useXtermSession(params: {
               }
             }
             if (disposed || !readyToSend) return
+            const readVisibleScreenText = (rows = 200): string => {
+              const buffer = terminal.buffer.active
+              const start = Math.max(0, buffer.length - rows)
+              const lines: string[] = []
+              for (let y = start; y < buffer.length; y++) {
+                const line = buffer.getLine(y)
+                if (line) lines.push(line.translateToString(true))
+              }
+              return lines.join('\n')
+            }
             try {
               try {
                 terminal.focus()
@@ -1665,16 +1831,6 @@ export function useXtermSession(params: {
                 // this component, e.g. by the e2e suite — see
                 // `e2e/support/openCodePrompt.ts` — without duplicating or
                 // reinventing something already tested live).
-                const readVisibleScreenText = (rows = 200): string => {
-                  const buffer = terminal.buffer.active
-                  const start = Math.max(0, buffer.length - rows)
-                  const lines: string[] = []
-                  for (let y = start; y < buffer.length; y++) {
-                    const line = buffer.getLine(y)
-                    if (line) lines.push(line.translateToString(true))
-                  }
-                  return lines.join('\n')
-                }
                 const delivered = await deliverOpenCodePrompt(prompt, deadline, {
                   readScreenText: readVisibleScreenText,
                   write: (data) => writePty(response.id, data),
@@ -1687,10 +1843,28 @@ export function useXtermSession(params: {
                   )
                   return
                 }
+              } else if (command === 'codex') {
+                // A startup dialog waits on the person, so give them longer than the launch deadline.
+                const delivered = await deliverCodexPrompt(prompt, Date.now() + 10 * 60_000, {
+                  readScreenText: () => readVisibleScreenText(terminal.rows),
+                  paste: (text) =>
+                    writePtyChunked(response.id, text, terminal.modes.bracketedPasteMode),
+                  submit: () => {
+                    noteCodexPaneInput(response.id)
+                    return writePty(response.id, '\r')
+                  },
+                  sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)),
+                  isCancelled: () => disposed,
+                })
+                if (!delivered) {
+                  console.warn(
+                    `[pty-launch] codex did not take the initial prompt before the deadline id=${response.id}`,
+                  )
+                  return
+                }
               } else {
                 await writePtyChunked(response.id, prompt, terminal.modes.bracketedPasteMode)
                 await new Promise((resolve) => window.setTimeout(resolve, 150))
-                if (command === 'codex') noteCodexPaneInput(response.id)
                 await writePty(response.id, '\r')
                 // A CLI still drawing its first screen, or sitting on a trust prompt, swallows the
                 // first returns, so the text stays typed but unsent. Extra ones only submit empty.
@@ -1735,11 +1909,14 @@ export function useXtermSession(params: {
         })
       }
       disposed = true
+      unregisterAgentInput?.()
+      unregisterAgentInput = null
       spawnQueueAbort.abort()
       container.removeEventListener('wheel', onWheel, true)
       container.removeEventListener('pointerdown', focusTerminal, true)
       container.removeEventListener('click', focusTerminal)
       releasePasteCapture()
+      releaseTextareaClean()
       container.removeEventListener('focusin', rememberTerminalFocus)
       container.removeEventListener('focusout', forgetTerminalFocus)
       document.removeEventListener('pointerdown', rememberPointerFocusIntent, true)

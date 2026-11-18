@@ -20,23 +20,25 @@
     "test:rust": "cd src-tauri && cargo test --lib",
     "test:ghostty": "cd src-tauri && cargo test --lib -- --ignored --test-threads=1 terminal_runs",
     "test": "vitest run",
-    "test:e2e:build": "npm run build && cross-env CARGO_TARGET_DIR=target-e2e tauri build --debug --no-bundle",
+    "test:e2e:build": "npm run build && cross-env CARGO_TARGET_DIR=target-e2e tauri build --debug --no-bundle --config e2e/tauri.e2e.json",
     "test:e2e": "wdio run e2e/wdio.conf.ts",
     "test:e2e:git-pipeline": "wdio run e2e/wdio.conf.ts --spec e2e/specs/git-pipeline.spec.ts",
     "replay:record": "wdio run e2e/wdio.conf.ts --spec e2e/specs/_record.spec.ts",
     "replay": "wdio run e2e/wdio.conf.ts --spec e2e/specs/_replay.spec.ts",
     "release": "node scripts/release.mjs",
     "release:publish": "node scripts/release-publish.mjs",
-    "mac-port": "node scripts/mac-port-report.mjs"
+    "mac-port": "node scripts/mac-port-report.mjs",
+    "skill:sync": "node scripts/sync-skill.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",
     "@radix-ui/react-dialog": "^1.1.2",
+    "@radix-ui/react-focus-scope": "^1.1.7",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.7.0",
-    "@tauri-apps/plugin-notification": "^2.4.0",
+    "@tauri-apps/plugin-notification": "~2.4.0",
     "@tauri-apps/plugin-process": "^2.3.1",
-    "@tauri-apps/plugin-updater": "^2.12.0",
+    "@tauri-apps/plugin-updater": "~2.12.0",
     "@types/cytoscape": "^3.21.9",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.16.0",
@@ -67,7 +69,6 @@
     "@wdio/spec-reporter": "^9.30.1",
     "@wdio/tauri-service": "^1.3.0",
     "cross-env": "^10.1.0",
-    "webdriverio": "^9.30.1",
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
@@ -80,7 +81,8 @@
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.65.0",
     "vite": "^6.4.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "webdriverio": "^9.30.1"
   },
   "allowScripts": {
     "esbuild@0.25.12": true

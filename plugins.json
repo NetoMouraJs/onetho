@@ -11,6 +11,140 @@
       "version": "1.0.0",
       "minApiVersion": 1,
       "capabilities": ["ui.sidebarTab", "ui.command"]
+    },
+    {
+      "id": "alethe.jev",
+      "name": "Jev",
+      "description": "Voice commands for the workspace and Ctrl+E dictation into the focused terminal.",
+      "author": "Alethe",
+      "repo": "Kc1t/alethe-jev",
+      "downloadUrl": "https://github.com/Kc1t/alethe-jev/releases/latest",
+      "version": "1.1.0",
+      "minApiVersion": 3,
+      "capabilities": [
+        "ui.overlay",
+        "ui.settings",
+        "ui.sidebarTab",
+        "workspace.read",
+        "workspace.control",
+        "terminal.write",
+        "voice.listen",
+        "invoke:jev_decide"
+      ],
+      "package": {
+        "url": "https://github.com/Kc1t/alethe-jev/releases/download/v1.1.0/alethe-jev-1.1.0.zip",
+        "sha256": "36926222b9d882dd6bb1dfaef5c3b5978234c0d0c41bcf38806e3137e7048037"
+      }
+    },
+    {
+      "id": "alethe.jev",
+      "name": "Jev",
+      "description": "Voice commands for the workspace and Ctrl+E dictation into the focused terminal.",
+      "author": "Alethe",
+      "repo": "Kc1t/alethe-jev",
+      "downloadUrl": "https://github.com/Kc1t/alethe-jev/releases/tag/v1.0.0",
+      "version": "1.0.0",
+      "minApiVersion": 2,
+      "capabilities": [
+        "ui.overlay",
+        "ui.settings",
+        "ui.sidebarTab",
+        "workspace.read",
+        "workspace.control",
+        "terminal.write",
+        "invoke:speech_*",
+        "invoke:jev_decide",
+        "listen:speech*"
+      ],
+      "package": {
+        "url": "https://github.com/Kc1t/alethe-jev/releases/download/v1.0.0/alethe-jev-1.0.0.zip",
+        "sha256": "e4f26fdd8cad32f296677562ba4af4ef78b6f43dfd95e7fd5fa3c6bec1b83d11"
+      }
+    },
+    {
+      "id": "alethe.agent-voice",
+      "name": "Agent Voice",
+      "description": "Each terminal speaks with its own Fish Audio voice when an agent finishes a turn, and you can answer it by voice.",
+      "author": "Alethe",
+      "repo": "Kc1t/alethe-agent-voice",
+      "downloadUrl": "https://github.com/Kc1t/alethe-agent-voice/releases/latest",
+      "version": "1.0.0",
+      "minApiVersion": 3,
+      "capabilities": [
+        "ui.overlay",
+        "ui.settings",
+        "ui.sidebarTab",
+        "ui.command",
+        "workspace.read",
+        "workspace.control",
+        "terminal.read",
+        "terminal.write",
+        "invoke:agent_voice_*",
+        "invoke:speech_*",
+        "listen:speech*"
+      ],
+      "package": {
+        "url": "https://github.com/Kc1t/alethe-agent-voice/releases/download/v1.0.0/alethe-agent-voice-1.0.0.zip",
+        "sha256": "536ab730644b39a9b86f4c0b67000ae1d9d433362b216df655a09f5d968f48eb"
+      }
+    },
+    {
+      "id": "alethe.voice",
+      "name": "Voice",
+      "description": "Talk to your agents and hear them answer: voice conversation, narration and a floating HUD.",
+      "author": "SrAmaral",
+      "repo": "Kc1t/alethe-voice",
+      "downloadUrl": "https://github.com/Kc1t/alethe-voice/releases/latest",
+      "version": "0.1.0",
+      "minApiVersion": 3,
+      "capabilities": [
+        "ui.overlay",
+        "ui.settings",
+        "workspace.read",
+        "terminal.read",
+        "terminal.write",
+        "terminal.restart",
+        "agent.observe",
+        "agent.approve",
+        "voice.listen",
+        "voice.speak",
+        "voice.hud",
+        "voice.converse",
+        "invoke:speech_list_models",
+        "invoke:speech_download_model",
+        "invoke:voice_servers_list",
+        "invoke:read_clipboard_text",
+        "listen:speech*",
+        "listen:voice*",
+        "invoke:voice_openrouter_models"
+      ],
+      "package": {
+        "url": "https://github.com/Kc1t/alethe-voice/releases/download/v0.1.0/alethe-voice-0.1.0.zip",
+        "sha256": "11a7bd6c0e58195844ac731667ede15f76976f5acff4900850b46d196f92d6d3"
+      }
+    }
+  ],
+  "builtIn": [
+    {
+      "id": "alethe.theme-pack",
+      "name": "Theme Pack",
+      "description": "Ember, Golden Premium, Dark Lemon and Orca.",
+      "version": "1.0.0",
+      "capabilities": ["ui.theme"]
+    },
+    {
+      "id": "alethe.git-control",
+      "name": "Git Control",
+      "description": "Source control panel: status, staging, commits, branches and the commit graph.",
+      "version": "1.0.0",
+      "capabilities": ["ui.sidebarTab", "ui.command", "invoke:git_*", "invoke:worktree_*"]
+    },
+    {
+      "id": "alethe.todos",
+      "name": "Todo List",
+      "description": "A checklist in the right sidebar, with tags and per-project assignment.",
+      "version": "1.0.0",
+      "capabilities": ["ui.sidebarTab", "ui.command", "ui.modal", "invoke:ensure_todo_template"]
     }
   ]
 }

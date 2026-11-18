@@ -4,14 +4,14 @@ import { lazy, Suspense, useEffect, useRef } from 'react'
 import { Group as PanelGroup, Panel, Separator, usePanelRef } from 'react-resizable-panels'
 
 import styles from './App.module.css'
-import { InAppNotifications } from './components/InAppNotifications'
 import homeBackground from './assets/home-bg-right.png'
 import { AgentSandbox } from './components/AgentSandbox'
 import { ContributedModals } from './components/ContributedModals'
-import { DictationButton } from './components/DictationButton'
+import { ContributedOverlays } from './components/ContributedOverlays'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { FocusOverlay } from './components/FocusOverlay'
 import { GsdSyncActivityView } from './components/GsdSyncActivityView'
+import { InAppNotifications } from './components/InAppNotifications'
 import { LinkViewerOverlay } from './components/LinkViewerOverlay'
 import { MainMenu } from './components/MainMenu'
 import { AddBrowserModal } from './components/modals/AddBrowserModal'
@@ -50,19 +50,20 @@ import { RightSidebar } from './components/RightSidebar'
 import { TitleBar } from './components/TitleBar'
 import { TokenHud } from './components/TokenHud'
 import { AsciiEffect } from './components/ui/ascii-effect'
-import { VoiceCommand } from './components/VoiceCommand'
 import { WorkspaceView } from './components/WorkspaceView'
 import { useAgentBrowserOffers } from './hooks/useAgentBrowserOffers'
 import { useAgentHookBridge } from './hooks/useAgentHookBridge'
-import { useCodexSessionBridge } from './hooks/useCodexSessionBridge'
-import { useClaudeUsagePush } from './hooks/useClaudeUsagePush'
-import { useCodexUsagePush } from './hooks/useCodexUsagePush'
-import { useAiMemoryAutoStart } from './hooks/useAiMemoryAutoStart'
 import { useAgentsSidebarAutoOpen } from './hooks/useAgentsSidebarAutoOpen'
+import { useAiMemoryAutoStart } from './hooks/useAiMemoryAutoStart'
+import { useClaudeUsagePush } from './hooks/useClaudeUsagePush'
 import { useCliOpenRequests } from './hooks/useCliOpenRequests'
 import { useCloseConfirmation } from './hooks/useCloseConfirmation'
+import { useCloudSync } from './hooks/useCloudSync'
+import { useCodexSessionBridge } from './hooks/useCodexSessionBridge'
+import { useCodexUsagePush } from './hooks/useCodexUsagePush'
 import { useDiscordPresence } from './hooks/useDiscordPresence'
 import { useKeybindings } from './hooks/useKeybindings'
+import { useOpenRouterUsage } from './hooks/useOpenRouterUsage'
 import { useOrchestrationSettingsSync } from './hooks/useOrchestrationSettingsSync'
 import { useRemoteControlService } from './hooks/useRemoteControlService'
 import { useResourceSupervisor } from './hooks/useResourceSupervisor'
@@ -70,6 +71,7 @@ import { useRouter9AutoStart } from './hooks/useRouter9AutoStart'
 import { startActivityTracker } from './lib/activityTracker'
 import { resumeAgentCanvasMirror } from './lib/agentCanvasMirror'
 import { APP_SHELL_ID } from './lib/appShell'
+import { rememberBootAppearance } from './lib/bootAppearance'
 import { BRAND_NAME } from './lib/brand'
 import { AGENT_SANDBOX_ENABLED } from './lib/featureFlags'
 import { intlLocale, translate, useT } from './lib/i18n'
@@ -82,7 +84,6 @@ import {
   orchestratorDefaultRuleSets,
   orchestratorSetRuleSets,
 } from './lib/tauri'
-import { rememberBootAppearance } from './lib/bootAppearance'
 import { loadThemeIconBytes } from './lib/themeIcons'
 import { useAppliedTheme } from './lib/themes'
 import { checkForUpdate } from './lib/updater'
@@ -220,6 +221,7 @@ export default function App() {
   useCodexSessionBridge()
   useClaudeUsagePush()
   useCodexUsagePush()
+  useOpenRouterUsage()
   useAgentsSidebarAutoOpen()
   useCliOpenRequests(hydrated)
 
@@ -233,6 +235,7 @@ export default function App() {
 
   useRouter9AutoStart(hydrated)
   useAiMemoryAutoStart(hydrated)
+  useCloudSync(hydrated, activeProfileId)
 
   useEffect(() => {
     void ghosttyKillAll().catch(() => {
@@ -679,8 +682,7 @@ export default function App() {
       <FocusOverlay />
       <GsdSyncActivityView />
       <LinkViewerOverlay />
-      <DictationButton />
-      <VoiceCommand />
+      <ContributedOverlays />
       <MainMenu />
       <ErrorBoundary label="modals">
         <NewProjectModal />

@@ -6,11 +6,13 @@ mod ai_memory;
 mod ai_memory_hooks;
 mod antigravity_sessions;
 mod antigravity_usage;
+mod audio_out;
 mod backup;
 mod brand;
 mod browser_pane;
 mod browser_session;
 mod cdp;
+mod child_env;
 mod claude_sessions;
 mod claude_usage;
 mod cli_launch;
@@ -41,6 +43,7 @@ mod handoff;
 mod health_probe;
 mod jev;
 mod kimi_usage;
+mod leftover_processes;
 mod logging;
 mod mcp_agents;
 mod mcp_catalog;
@@ -52,6 +55,7 @@ mod native_subagent_status;
 mod opencode_bridge;
 mod opencode_gsd_plugin;
 mod opencode_sessions;
+mod openrouter_usage;
 pub mod orchestrator;
 pub mod orchestrator_core;
 mod orchestrator_shell_host;
@@ -68,11 +72,14 @@ mod project_detector;
 mod projects;
 mod provider_common;
 mod pty;
+mod release_install;
 mod remote;
 mod resource_manager;
 mod resources;
 mod router9;
+mod router9_remote;
 mod scheduler;
+mod agent_voice;
 mod secure_store;
 mod session_watcher;
 mod statusline_bridge;
@@ -81,14 +88,23 @@ mod statusline_bridge;
 mod single_instance_probe;
 mod skills;
 mod speech;
+mod speech_layout;
+mod speech_hub;
+mod speech_apple;
 mod speech_capture;
+mod speech_download;
 mod speech_cloud;
 mod speech_vad;
 mod spotify;
 mod stats;
 mod supervisor;
 mod telemetry;
+mod tts;
+mod tts_local;
+mod voice_providers;
+mod voice_servers;
 mod validation;
+mod voice_hud;
 mod webview_media;
 mod window_style;
 #[cfg(windows)]
@@ -137,21 +153,23 @@ pub fn run() {
     if let Some(code) = statusline_bridge::run_if_requested() {
         std::process::exit(code);
     }
-    // bugs conhecidos no Wayland — escala fracionada quebrando layout,
 
-    // ("Error 71") em alguns drivers de GPU — documentados oficialmente em
-    // https://v2.tauri.app/develop/debug/linux-graphics/. Desligar o
+    let args: Vec<String> = std::env::args().collect();
+    let action = cli_launch::parse_cli_action(&args);
+    if let Some(exit) = cli_launch::cli_immediate_exit(action) {
+        cli_launch::attach_parent_console();
+        cli_launch::write_cli_exit(&exit);
+        std::process::exit(exit.code);
+    }
 
+    // Work around known Wayland/DMABUF WebKitGTK rendering bugs ("Error 71") on Linux:
+    // https://v2.tauri.app/develop/debug/linux-graphics/
     #[cfg(target_os = "linux")]
     std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
 
     let _ = dotenvy::dotenv();
-    // `npm run app` (dev) injeta EDITOR=vi e GIT_EDITOR=true no ambiente do
-
-    // o vi-mode (Ctrl+R vira "redisplay", Ctrl+A/E viram self-insert — bug real
-
-    // npm (rodando sob npm run + valores exatos que o npm injeta); o ambiente
-
+    // `npm run app` injects EDITOR=vi and GIT_EDITOR=true into the environment; strip those
+    // exact npm defaults so child shells do not inherit unintended vi-mode settings.
     if std::env::var_os("npm_lifecycle_event").is_some() {
         if std::env::var("EDITOR").as_deref() == Ok("vi") {
             std::env::remove_var("EDITOR");
@@ -166,6 +184,13 @@ pub fn run() {
     // Built once and handed to `build()` below: `generate_context!` embeds the
     // whole frontend bundle, so expanding it twice would duplicate it.
     let context: tauri::Context<tauri::Wry> = tauri::generate_context!();
+
+    if action == cli_launch::CliAction::Update {
+        cli_launch::attach_parent_console();
+        let exit = cli_launch::run_cli_update(context);
+        cli_launch::write_cli_exit(&exit);
+        std::process::exit(exit.code);
+    }
 
     // `tauri-plugin-single-instance` exits the second process with status 0 and
     // prints nothing, so a stale owner looks exactly like a broken install.
@@ -230,10 +255,20 @@ pub fn run() {
         .manage(router9::Router9Process::default())
         .manage(ai_memory::AiMemoryProcess::default())
         .manage(speech::SpeechState::default())
+        .manage(release_install::PendingRelease::default())
+        .manage(speech_hub::HubState::default())
+        .manage(voice_hud::StateStore::default())
+        .manage(voice_hud::ShortcutState::default())
+        .manage(voice_hud::HudWindowState::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(voice_hud::on_shortcut)
+                .build(),
+        )
         .register_uri_scheme_protocol("alethe-plugin", |ctx, request| {
             plugin_assets::serve(ctx.app_handle(), &request)
         });
@@ -243,6 +278,11 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             cli_launch::handle_second_instance(app, argv, cwd);
         }));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.plugin(tauri_nspanel::init());
     }
 
     builder
@@ -260,10 +300,10 @@ pub fn run() {
                         let (width, height) = rgba.dimensions();
                         let icon = tauri::image::Image::new_owned(rgba.into_raw(), width, height);
                         if let Err(error) = window.set_icon(icon) {
-                            eprintln!("[icon] falha ao aplicar ícone da janela: {error}");
+                            eprintln!("[icon] could not set the window icon: {error}");
                         }
                     }
-                    Err(error) => eprintln!("[icon] falha ao decodificar ícone embutido: {error}"),
+                    Err(error) => eprintln!("[icon] could not decode the embedded icon: {error}"),
                 }
                 // Required for getUserMedia / voice dictation on WebKitGTK.
                 webview_media::grant_media_permissions(&window);
@@ -313,6 +353,7 @@ pub fn run() {
             // Resource Manager (memory pressure, policy engine, task scheduler)
             resource_manager::start(app.handle().clone());
 
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -323,11 +364,23 @@ pub fn run() {
             agent_events::agent_hooks_token,
             agent_events::set_agent_canvas_mirror,
             agent_events::agent_canvas_mirror,
+            agent_events::agent_permission_decide,
+            agent_events::voice_set_targets,
+            agent_events::agent_voice_hooked_ptys,
+            voice_hud::voice_hud_show,
+            voice_hud::voice_hud_hide,
+            voice_hud::voice_hud_publish,
+            voice_hud::voice_hud_snapshot,
+            voice_hud::voice_hud_action,
+            voice_hud::voice_hud_moved,
+            voice_hud::voice_shortcut_set,
             orchestrator::orchestrator_mcp_config_path,
             orchestrator::orchestrator_jobs,
             orchestrator::orchestrator_set_concurrency,
             orchestrator::orchestrator_apply_settings,
             orchestrator::orchestrator_codex_models,
+            orchestrator::orchestrator_playbooks,
+            orchestrator::orchestrator_save_playbooks,
             orchestrator::orchestrator_set_agent_fitness,
             orchestrator::orchestrator_set_rule_sets,
             orchestrator::orchestrator_default_rule_sets,
@@ -416,6 +469,8 @@ pub fn run() {
             ghostty_bridge::ghostty_spawn,
             ghostty_bridge::ghostty_sync_frame,
             ghostty_bridge::ghostty_set_hidden,
+            ghostty_bridge::ghostty_set_focus,
+            ghostty_bridge::ghostty_surface_exited,
             ghostty_bridge::ghostty_kill,
             ghostty_bridge::ghostty_kill_all,
             ghostty_bridge::ghostty_debug_send_read,
@@ -423,6 +478,8 @@ pub fn run() {
             resource_manager::get_resource_metrics,
             process_tree::get_pty_tree_info,
             process_tree::kill_pty_tree_cmd,
+            leftover_processes::list_leftover_processes,
+            leftover_processes::kill_leftover_process,
             projects::load_projects,
             projects::save_projects,
             projects::clone_github_repo,
@@ -449,6 +506,8 @@ pub fn run() {
             backup::export_backup,
             backup::export_profile_backup,
             backup::import_backup,
+            release_install::download_release,
+            release_install::install_downloaded_release,
             github_sync::github_sync_status,
             github_sync::github_sync_set_token,
             github_sync::github_sync_logout,
@@ -458,8 +517,22 @@ pub fn run() {
             cloud_sync::cloud_sync_device_start,
             cloud_sync::cloud_sync_device_finish,
             cloud_sync::cloud_sync_logout,
-            cloud_sync::cloud_sync_push,
-            cloud_sync::cloud_sync_pull,
+            cloud_sync::cloud_sync_me,
+            cloud_sync::cloud_sync_manifest,
+            cloud_sync::cloud_sync_get,
+            cloud_sync::cloud_sync_put,
+            cloud_sync::cloud_sync_revisions,
+            cloud_sync::cloud_sync_revision,
+            cloud_sync::cloud_sync_devices,
+            cloud_sync::cloud_sync_revoke_device,
+            cloud_sync::cloud_sync_delete_account,
+            cloud_sync::cloud_sync_export_account,
+            cloud_sync::cloud_billing_checkout,
+            cloud_sync::cloud_billing_portal,
+            cloud_sync::cloud_billing_refresh,
+            cloud_sync::cloud_sync_state_read,
+            cloud_sync::cloud_sync_machine,
+            cloud_sync::cloud_sync_state_write,
             github_pr::github_pr_find,
             github_pr::github_pr_merge,
             github_pr::github_pr_list_mine,
@@ -482,6 +555,7 @@ pub fn run() {
             git_control::git_revert_commit,
             git_control::git_reset_to_commit,
             git_control::git_incoming_outgoing,
+            git_control::git_remote_origin,
             diagnostics::open_data_folder,
             diagnostics::open_spawn_log,
             diagnostics::open_in_file_explorer,
@@ -519,6 +593,8 @@ pub fn run() {
             handoff::prepare_agent_handoff,
             handoff::materialize_agent_handoff,
             handoff::complete_agent_handoff,
+            handoff::prune_agent_handoffs,
+            handoff::agent_transcript_snapshot,
             antigravity_sessions::snapshot_antigravity_sessions,
             cursor_sessions::create_cursor_chat,
             claude_usage::get_claude_usage,
@@ -529,6 +605,9 @@ pub fn run() {
             codex_usage::consume_codex_reset_credit,
             antigravity_usage::get_antigravity_usage,
             kimi_usage::get_kimi_usage,
+            openrouter_usage::get_openrouter_usage,
+            openrouter_usage::openrouter_set_management_key,
+            openrouter_usage::openrouter_delete_management_key,
             agent_cost::get_session_cost,
             agent_cost::get_transcript_cost,
             agent_cost::get_model_pricing,
@@ -537,10 +616,15 @@ pub fn run() {
             crash_watch::get_job_guard_status,
             set_window_opacity,
             jev::jev_decide,
+            agent_voice::agent_voice_key_status,
+            agent_voice::agent_voice_set_key,
+            agent_voice::agent_voice_tts,
             speech::speech_list_models,
             speech::speech_list_input_devices,
             speech::speech_model_states,
             speech::speech_download_model,
+            speech::speech_pause_download,
+            speech::speech_cancel_download,
             speech::speech_delete_model,
             speech::speech_start_capture,
             speech::speech_capture_level,
@@ -551,7 +635,26 @@ pub fn run() {
             speech::speech_stop_and_transcribe,
             speech::speech_transcribe_partial,
             speech::speech_transcribe,
-            speech_cloud::speech_stop_and_transcribe_cloud,
+            speech::speech_native_locales,
+            speech_hub::speech_hub_search,
+            speech_hub::speech_hub_resolve,
+            tts::tts_speak,
+            tts::tts_prefetch,
+            tts::tts_stop,
+            tts::tts_pause,
+            tts::tts_resume,
+            tts::tts_set_muted,
+            tts::tts_voices,
+            voice_providers::keys::voice_provider_key_status,
+            voice_providers::keys::voice_provider_set_key,
+            voice_providers::keys::voice_provider_delete_key,
+            voice_providers::keys::voice_provider_test,
+            voice_providers::catalog::voice_provider_catalog,
+            voice_providers::openrouter::voice_openrouter_models,
+            voice_servers::commands::voice_servers_list,
+            voice_servers::commands::voice_servers_save,
+            voice_servers::commands::voice_servers_delete,
+            voice_servers::commands::voice_servers_test,
             quit_app,
             worktrees::worktree_provision,
             worktrees::worktree_list,
@@ -610,6 +713,8 @@ pub fn run() {
             ai_memory::ai_memory_mcp_config_path,
             ai_memory::ai_memory_opencode_config_write,
             ai_memory::ai_memory_codex_config_write,
+            router9_remote::router9_remote_key_status,
+            router9_remote::router9_set_remote_key,
             ai_memory::ai_memory_install,
             ai_memory::ai_memory_start,
             ai_memory::ai_memory_stop,
@@ -646,6 +751,7 @@ pub fn run() {
             skills::skills_uninstall,
             skills::skills_catalog,
             skills::skills_install_bundled,
+            skills::skills_remove_bundled,
             opencode_sessions::snapshot_opencode_sessions,
             opencode_sessions::opencode_export_session,
             ping,
@@ -653,9 +759,20 @@ pub fn run() {
         .build(context)
         .expect("error while building alethe")
         .run(move |_app_handle, event| {
-            // emitir `Exit`; esperar esse evento deixa shells/agentes vivos
+            // The hidden voice HUD must not keep the process alive once the main window closes.
+            if let tauri::RunEvent::WindowEvent { label, event: window_event, .. } = &event {
+                if exits_with_window(label, window_event)
+                    && !EXIT_REQUESTED.load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    _app_handle.exit(0);
+                }
+            }
 
+            // Tear down on ExitRequested: on Windows `Exit` can arrive late and leave shells alive.
             if let tauri::RunEvent::ExitRequested { .. } = event {
+                EXIT_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+                agent_events::release_all_permissions(_app_handle);
+                agent_events::cleanup_settings_files();
                 pty::kill_all_sessions_background(&sessions_for_exit);
                 browser_session::kill_running_session(
                     &_app_handle.state::<browser_session::BrowserSessionState>(),
@@ -665,9 +782,18 @@ pub fn run() {
             }
 
             if let tauri::RunEvent::Exit = event {
+                agent_events::cleanup_settings_files();
                 crash_watch::mark_clean_exit();
             }
         });
+}
+
+/// Set once the app is exiting, so a window destroyed during the exit does not ask again.
+static EXIT_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The app has no use without its main window.
+fn exits_with_window(label: &str, event: &tauri::WindowEvent) -> bool {
+    label == "main" && matches!(event, tauri::WindowEvent::Destroyed)
 }
 
 #[tauri::command]
@@ -700,6 +826,14 @@ fn ping() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_destroying_the_main_window_exits() {
+        assert!(exits_with_window("main", &tauri::WindowEvent::Destroyed));
+        assert!(!exits_with_window("voice-hud", &tauri::WindowEvent::Destroyed));
+        assert!(!exits_with_window("orchestration-x", &tauri::WindowEvent::Destroyed));
+        assert!(!exits_with_window("main", &tauri::WindowEvent::Focused(false)));
+    }
 
     #[test]
     fn rebuilt_path_is_non_empty_on_windows() {

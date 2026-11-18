@@ -7,6 +7,8 @@ export const BRAND_NAME = 'Onetho'
 export const BRAND_COMMAND = 'onetho'
 export const BRAND_IDENTIFIER = 'com.netomoura.onetho'
 export const BRAND_REPOSITORY_URL = 'https://github.com/NetoMouraJs/onetho'
+export const BRAND_AUTHOR = 'Neto Moura'
+export const BRAND_AUTHOR_GITHUB = 'NetoMouraJs'
 
 export const UPSTREAM_NAME = 'Alethe'
 export const UPSTREAM_AUTHOR = 'Kauã Miguel'
