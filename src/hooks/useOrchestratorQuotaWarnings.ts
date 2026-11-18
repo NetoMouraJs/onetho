@@ -61,7 +61,10 @@ export function useOrchestratorQuotaWarnings(): QuotaWarning[] {
       }
       if (codexAccess) {
         try {
-          const warning = await report('codex', codexFitness(await traceCachedCodexUsage(false, 'codex.quotaPoll')))
+          const warning = await report(
+            'codex',
+            codexFitness(await traceCachedCodexUsage(false, 'codex.quotaPoll')),
+          )
           if (warning) next.push(warning)
         } catch {
           // ignore

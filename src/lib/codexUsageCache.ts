@@ -1,5 +1,10 @@
 import { useUiStore } from '../stores/uiStore'
-import { classifyUsageFailure, type DevDiagnosticSource,finishDevTrace, startDevTrace } from './devDiagnostics'
+import {
+  classifyUsageFailure,
+  type DevDiagnosticSource,
+  finishDevTrace,
+  startDevTrace,
+} from './devDiagnostics'
 import { type CodexSessionUsage, type CodexUsage, getCodexUsage } from './tauri'
 import { makeTtlCache } from './ttlCache'
 import { hasUsageAccess, isUsageAccessOff } from './usageAccess'
@@ -77,8 +82,11 @@ export async function traceCachedCodexUsage(
     finishDevTrace(trace, 'succeeded')
     return usage
   } catch (error) {
-    finishDevTrace(trace, isUsageAccessOff(error) ? 'skipped' : 'failed',
-      isUsageAccessOff(error) ? undefined : classifyUsageFailure(error))
+    finishDevTrace(
+      trace,
+      isUsageAccessOff(error) ? 'skipped' : 'failed',
+      isUsageAccessOff(error) ? undefined : classifyUsageFailure(error),
+    )
     throw error
   }
 }
