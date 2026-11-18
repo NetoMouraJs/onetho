@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import { customAgentIconComponent } from '../components/icons/customAgentIcons'
 import { syncCustomAgentProviders } from '../lib/agentProviders'
 import { DEFAULT_GRID_ID, normalizeProjectGrids, selectProjectGrid } from '../lib/projectGrids'
+import type { ProjectMergePlan } from '../lib/projectSync'
 import { sanitizeLeakedTabNames } from '../lib/sessionTitle'
 import { setStorageNamespace } from '../lib/storageNamespace'
 import {
@@ -11,6 +12,7 @@ import {
   loadProjectsFile,
   type ProfileMeta,
   type ProfilesState,
+  pruneAgentHandoffs,
   recordAppEvent,
   recordFrontendError,
   saveProjectsFile,
@@ -32,10 +34,12 @@ import {
   type OrphanWorktree,
   type Preferences,
   type Project,
+  type ProjectOverrideGroup,
   type ProjectsFile,
   type SubTab,
   type Terminal,
   type Theme,
+  type ToolingManifest,
   type WorkspaceContainer,
   type WorkspaceRecentTab,
   type WorkspaceTab,
@@ -116,6 +120,11 @@ export type ProjectsState = ProjectsFile & {
     firstBootPending?: boolean
   }) => Project
   importProjectFromFile: (data: Project, groupId?: string | null) => Project
+  applyProjectMergePlan: (plan: ProjectMergePlan) => void
+  setProjectGithubUrl: (id: string, url: string) => void
+  setProjectLocalOverrides: (id: string, groups: ProjectOverrideGroup[]) => void
+  setProjectToolingManifest: (id: string, manifest: ToolingManifest | undefined) => void
+  relocateProject: (id: string, path: string) => void
   renameProject: (id: string, name: string) => void
   archiveProject: (id: string) => void
   unarchiveProject: (id: string) => void
@@ -270,6 +279,10 @@ export type ProjectsState = ProjectsFile & {
 
   closePane: (projectId: string, terminalId: string) => void
 
+  /** Like closePane, but keeps the PTY alive in the background; clicking the terminal in the
+   * sidebar reopens its pane and reattaches to the still-running process. */
+  minimizePane: (projectId: string, terminalId: string) => void
+
   togglePane: (projectId: string, terminalId: string) => void
 
   openContainerWithAllPanes: (projectId: string) => void
@@ -365,6 +378,14 @@ let readOnly = false
  */
 export function setProjectsReadOnly(value: boolean): void {
   readOnly = value
+}
+
+function liveHandoffIds(projects: Project[]): string[] {
+  return projects.flatMap((project) =>
+    project.terminals.flatMap((terminal) =>
+      terminal.tabs.flatMap((tab) => (tab.handoff ? [tab.handoff.id] : [])),
+    ),
+  )
 }
 
 let lastWriteSequence = Date.now()
@@ -778,6 +799,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => {
         syncCustomAgentProviders(migrated.preferences.customAgents, (definition) =>
           customAgentIconComponent(definition.iconSpec ?? definition.icon ?? 'bot'),
         )
+        if (!readOnly) void pruneAgentHandoffs(liveHandoffIds(migrated.projects)).catch(() => {})
         void recordAppEvent(
           'projects.hydrate',
           `source=disk projects=${migrated.projects.length} groups=${migrated.groups.length} tabs=${migrated.workspace.tabs.length} active_tab=${Boolean(migrated.workspace.activeTabId)} left_sidebar=${migrated.preferences.leftSidebarVisible} right_sidebar=${migrated.preferences.rightSidebarVisible}`,
@@ -817,6 +839,7 @@ useProjectsStore.subscribe((state, previous) => {
   }
   if (revoked.includes('codex')) ui.setCodexUsage(null)
   if (revoked.includes('antigravity')) ui.setAntigravityUsage(null)
+  if (revoked.includes('openrouter')) ui.setOpenRouterUsage(null)
 })
 
 /** Flushes the debounced document before the native window is destroyed. */

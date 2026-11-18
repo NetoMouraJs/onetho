@@ -6,6 +6,7 @@ import {
   GitCommitHorizontal,
   ListTodo,
   type LucideIcon,
+  Mic,
   Play,
   Plug,
   Puzzle,
@@ -13,6 +14,9 @@ import {
   Settings,
   Sparkles,
   Terminal,
+  Users,
+  Volume2,
+  VolumeX,
 } from 'lucide-react'
 
 /**
@@ -26,6 +30,7 @@ const PLUGIN_ICONS: Record<string, LucideIcon> = {
   'git-branch': GitBranch,
   'git-commit': GitCommitHorizontal,
   'list-todo': ListTodo,
+  mic: Mic,
   play: Play,
   plug: Plug,
   puzzle: Puzzle,
@@ -33,6 +38,9 @@ const PLUGIN_ICONS: Record<string, LucideIcon> = {
   settings: Settings,
   sparkles: Sparkles,
   terminal: Terminal,
+  users: Users,
+  'volume-2': Volume2,
+  'volume-x': VolumeX,
 }
 
 export function pluginIcon(name?: string | null): LucideIcon {

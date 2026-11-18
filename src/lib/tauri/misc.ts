@@ -80,6 +80,20 @@ export function listenRemoteMessages(
   return listen<RemoteMessageEvent>('remote://message', (event) => handler(event.payload))
 }
 
+export type RemoteOpenAgentEvent = {
+  projectId: string
+  agent: 'claude' | 'codex'
+  deviceId: number
+  deviceName: string
+}
+
+/** Fires when a paired device asks to start a new agent terminal in a project. */
+export function listenRemoteOpenAgent(
+  handler: (event: RemoteOpenAgentEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<RemoteOpenAgentEvent>('remote://open-agent', (event) => handler(event.payload))
+}
+
 export async function openRemoteControlPairing(): Promise<RemoteControlInfo> {
   return invoke<RemoteControlInfo>('remote_control_open_pairing')
 }
@@ -183,16 +197,38 @@ export async function agentCliVersion(agent: string): Promise<string | null> {
   return invoke<string | null>('agent_cli_version', { agent })
 }
 
-export async function exportBackup(targetPath: string): Promise<void> {
-  await invoke('export_backup', { targetPath })
+export type BackupReport = {
+  skipped: string[]
+  embeddedImages: number
+  imageLinksKept: string[]
 }
 
-export async function exportProfileBackup(profileId: string, targetPath: string): Promise<void> {
-  await invoke('export_profile_backup', { profileId, targetPath })
+export type ImportReport = {
+  localStorage: Record<string, string>
+  profileName: string | null
 }
 
-export async function importBackup(sourcePath: string): Promise<void> {
-  await invoke('import_backup', { sourcePath })
+export async function exportBackup(
+  targetPath: string,
+  localStorage: Record<string, string> = {},
+): Promise<BackupReport> {
+  return invoke<BackupReport>('export_backup', { targetPath, extras: { localStorage } })
+}
+
+export async function exportProfileBackup(
+  profileId: string,
+  targetPath: string,
+  localStorage: Record<string, string> = {},
+): Promise<BackupReport> {
+  return invoke<BackupReport>('export_profile_backup', {
+    profileId,
+    targetPath,
+    extras: { localStorage },
+  })
+}
+
+export async function importBackup(sourcePath: string): Promise<ImportReport> {
+  return invoke<ImportReport>('import_backup', { sourcePath })
 }
 
 export type GithubSyncStatus = {
@@ -222,53 +258,6 @@ export async function githubSyncPush(): Promise<GithubSyncStatus> {
 
 export async function githubSyncPull(): Promise<GithubSyncStatus> {
   return invoke<GithubSyncStatus>('github_sync_pull')
-}
-
-export type CloudSyncStatus = {
-  configured: boolean
-  connected: boolean
-  login: string | null
-  name: string | null
-  avatar_url: string | null
-  plan: string | null
-  last_push_ms: number | null
-  last_pull_ms: number | null
-}
-
-export type CloudDeviceStart = {
-  device_code: string
-  user_code: string
-  verification_uri: string
-  interval: number
-  expires_in: number
-}
-
-export async function cloudSyncStatus(): Promise<CloudSyncStatus> {
-  return invoke<CloudSyncStatus>('cloud_sync_status')
-}
-
-export async function cloudSyncDeviceStart(): Promise<CloudDeviceStart> {
-  return invoke<CloudDeviceStart>('cloud_sync_device_start')
-}
-
-export async function cloudSyncDeviceFinish(start: CloudDeviceStart): Promise<CloudSyncStatus> {
-  return invoke<CloudSyncStatus>('cloud_sync_device_finish', {
-    deviceCode: start.device_code,
-    interval: start.interval,
-    expiresIn: start.expires_in,
-  })
-}
-
-export async function cloudSyncLogout(): Promise<CloudSyncStatus> {
-  return invoke<CloudSyncStatus>('cloud_sync_logout')
-}
-
-export async function cloudSyncPush(payload: unknown): Promise<CloudSyncStatus> {
-  return invoke<CloudSyncStatus>('cloud_sync_push', { payload })
-}
-
-export async function cloudSyncPull(): Promise<unknown> {
-  return invoke<unknown>('cloud_sync_pull')
 }
 
 // --- RFC-001 — Event Bus & Observabilidade ---

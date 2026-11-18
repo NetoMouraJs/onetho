@@ -14,6 +14,132 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
 - **Dev diagnostic details.** Failed events can show a sanitized frontend stack and their full event ID.
 
 ### Added
+
+- **Voice plugin.** A new plugin in the catalogue, [Voice](https://github.com/Kc1t/alethe-voice),
+  brings the voice conversation from #336 by @SrAmaral: talk to an agent tab, hear its progress and
+  replies, answer permission prompts by voice, and follow along in the floating HUD. Its settings sit
+  under Preferences → Voice.
+- **Voice conversation plugin support.** Plugins can submit prompts safely, focus background agent
+  tabs, resume conversations on restart, observe agent activity and transcripts, and request permission
+  decisions through separate permissions. Voice plugins can enable Claude conversation hooks, track
+  speech progress, follow app appearance, and add settings below Preferences → Voice on plugin API 3.
+- **Core voice HUD renderer.** The floating voice window displays plugin-published conversation
+  state and sends controls back without loading plugins or writing workspace data.
+
+- **Typed plugin voice API.** Plugins can request microphone transcription, speech playback, and
+  floating voice HUD access through separate permissions, inspect provider key availability, and
+  open Preferences → Voice while the app manages provider credentials.
+- **Voice in Preferences.** A new Voice page manages cloud provider API keys, custom speech servers
+  and local speech models, with Hugging Face search and downloads you can pause, resume, cancel or
+  remove. Keys stay in the system keychain; plugins can only check whether one is set.
+
+- **9router remote gateway.** Preferences → 9router now has a *Remote gateway* mode that routes
+  Claude Code and Codex through a hosted 9router-compatible gateway (URL, key, model ids) instead
+  of a local install. The key is kept in the system keychain, is never shown again, and only reaches
+  the terminals routed through the gateway. The per-terminal *Route through 9router* toggle picks
+  gateway or own account when the terminal opens. A checklist marks what is missing, and *Done*
+  confirms the setup is saved and routing is live.
+- **Agent Voice plugin.** A new plugin in the catalogue (Preferences → Plugins), kept in
+  [its own repository](https://github.com/Kc1t/alethe-agent-voice), makes each terminal speak with
+  its own Fish Audio voice when an agent finishes a turn: the first sentence or two of its reply, or
+  a success or failure line when a shell exits. Voices queue, a card shows who is speaking, and with
+  Reply by voice on, the terminal that just spoke listens for a few seconds and types the reply it
+  hears, transcribed on this computer. The Fish Audio key lives in the system keychain and requests
+  go through the app backend; the plugin can set or clear the key but never reads it.
+- **Plugin API 3.** Plugins can follow every running terminal tab, including background ones: its
+  status, its output and its exit, and type into that exact tab. Reading terminal output is a new
+  permission, *Read what your terminals print*, named in the trust dialog. Plugins can also show the
+  app's own agent names, colors, icons and dropdowns, read the app language, and receive results a
+  host command streams back. Text a plugin types into an agent, including Jev's, now counts as a
+  prompt the same way typing it does, so the agent shows as working and its completion is detected.
+- **Tutorials in Preferences.** A new Tutorials page plays the videos that show Alethe in real work
+  inside Settings, one at a time, with a link to open each on YouTube and to the channel.
+- **Playbooks editor in Preferences.** A new Playbooks page shows every orchestration playbook as a
+  canvas of blocks: the planner, each decision, the role and model each step runs on with its list
+  price, the fallbacks when a provider runs low, and the escalation when a check fails. Drag workers,
+  your own steps, checks and conditions from the block palette, connect their ports, and drop a
+  condition on a worker to give it a model rule. Conditions cover the task, quota (a provider low, a
+  window past a percent, quota that would be lost, every provider low) and cost (budget low, the
+  model's price per million tokens, the spend so far). Pick a task, check result, budget and spend to
+  light the path that would run, switch between the base, savings and aggressive profiles, and see
+  Claude and Codex quota read live. Create, duplicate or delete playbooks; a shape the skill cannot
+  run is outlined with what to fix, and saving writes `alethe-playbooks.yaml`, the file the
+  orchestration skill plans with.
+- **Official skills, always listed and installable into a project.** The Skills window lists Alethe's
+  official skills even after they are installed, with their version and a link to their source. A
+  project's MCP & skills tab installs, updates, or removes them inside the repository, where Claude
+  Code reads `.claude/skills` and Codex reads `.agents/skills`, so they travel with the project.
+- **Minimize a terminal instead of deleting it.** The terminal header gets a minimize button, and
+  the sidebar context menu gets a matching option, that hides the pane while keeping its process
+  running in the background. Clicking the terminal in the sidebar reopens it.
+- **Close tabs with the middle mouse button.** Terminal sub-tabs and workspace tabs in the title
+  bar now close on a middle-click, matching browser tab-strip convention.
+- **Start agents and follow orchestration from your phone.** Remote control can now start a Claude
+  Code or Codex terminal in any project from the paired device; the desktop opens it already shared
+  and the phone jumps into the chat. The phone also lists the orchestrator workers of shared projects
+  with their task, status, time, and cost, and says when one is waiting for approval on the desktop.
+  Read-only devices cannot start agents.
+- **Leftover processes in Memory analytics.** Dev servers and runtimes still running after the
+  terminal that started them closed (Node, Python, shells, agent CLIs) are listed with how long they
+  have been running, when they started, their folder, and their memory, each with an End button and
+  an End all action.
+- **Alethe Cloud sync that merges instead of overwriting.** A single Sync now button replaces Upload
+  and Download. Edits made on different machines are merged. The cloud carries preferences (now including custom agents and orchestration
+  settings), plugin state, project settings, and the account's MCP servers and skills. At startup,
+  Alethe says when another device changed something and offers to sync.
+- **MCP servers and skills saved per account and per project.** Save the current setup from Accounts
+  (global MCP servers and skills) or from a project's new **MCP & skills** tab, and the list travels
+  with sync. On another machine Alethe shows what is installed and what is missing, and installs the
+  missing items in one click. Secret env and header values are never stored and are asked for again
+  on install; only skills bundled with Alethe install automatically.
+- **Project settings travel with sync.** Name, color, validation and health-check commands, merge and
+  worktree options, and linked MCP servers sync without terminals or layout. Projects are matched by
+  id, Git remote (detected automatically), or folder.
+- **Projects by computer.** Each computer keeps its own list of projects and its own folder for each
+  one. Sync → Projects by computer shows which computers have each project and where; a project from
+  another computer is added here only when you choose, using its folder if it exists or one you pick.
+  Removing a project removes it from this computer only, and it leaves your account when no computer
+  has it anymore. A computer you no longer use can be forgotten.
+- **Per-computer project settings.** The Agents and MCP & skills tabs of a project have an Only on
+  this computer switch that keeps that tab's settings off sync; turning it off asks whether to use
+  the shared version or share this one.
+- **Devices, history, and account controls in Sync.** See the devices signed in to your account and
+  sign any of them out, restore an earlier version of settings, projects, or MCP servers and skills,
+  and download or delete everything stored in your Alethe Cloud account.
+- **Supporter plan.** An optional monthly or yearly subscription, sold through Polar, that turns on
+  automatic background sync and keeps 30 days of version history. Alethe itself stays free and open
+  source.
+- **Settings file export and import.** Sync → File saves preferences, project settings, and the MCP
+  setup to a `.alethe` file, and imports one after showing what will change. No account is needed and
+  secrets are never included.
+- **Orchestration setup guidance and strategy preview.** The bundled skill now walks through
+  provider and strategy choices, asks about additional CLIs and routing tools such as 9router,
+  and describes ready-made routes. Preferences shows a diagram of the selected default strategy
+  with official provider marks and labeled delegation and traffic arrows. A new SVG renderer
+  creates a shareable, dark, top-down architecture preview from the resolved dry-run plan.
+- **Strategy playbooks that orchestrate and save.** Before planning, the bundled skill reads a
+  playbooks file with eleven presets: plan big, execute small; cascade; scout, then build; advisor
+  on call; review gate; and an adaptive Complete flow, among others. Each phase names a role, a
+  tier, its model and effort, and conditions such as "when Claude's 5-hour or weekly window runs
+  low, use Codex at the same tier". Quota that would otherwise be lost, because a plan ends before
+  its weekly reset or a weekly window resets soon with plenty left, goes to the strong tier.
+  `orchestrate.py playbook` prints the file in effect, and `playbook --init` creates a copy to edit.
+- **Orchestration setup builds your profiles.** Setting up the bundled skill now takes inventory of
+  the CLIs, models and routes you actually have, including Antigravity, Kimi, Kiro, Copilot and
+  9router, and proposes base, savings and aggressive profiles over the same playbooks. They are
+  saved to your playbooks file only after you approve. A custom CLI is added only after its help
+  confirms a non-interactive mode, and flags that approve every tool, such as `--trust-all-tools`,
+  now need explicit authorization.
+- **Orchestration reports.** Ask the bundled orchestration skill what a run did or cost and it
+  reports each worker's role, where it ran, how long it took, the tokens and cost its CLI
+  reported, what it changed, and what is left to review. It never estimates a number a CLI did
+  not report.
+- **Orchestration limits the skill enforces.** The bundled skill can cap calls, reported cost and
+  reported tokens across every wave of an orchestration, gives Claude workers a hard cost cap, and
+  stops Codex and Claude workers from starting subagents. Workers start without MCP servers unless
+  they need one, which halved the tokens of a one-line Claude check. Read-only workers that change
+  the checkout, blocked workers and failed checks now show up in the report, and marking each
+  result used or discarded shows what the spend bought.
 - **Administrator shell tabs.** New terminal and new tab dialogs offer a Windows administrator
   option when Shell is selected. Elevated shells stay in the Alethe tab and request UAC approval
   through gsudo or Windows Sudo configured in inline mode.
@@ -41,6 +167,15 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
 - **Voice success toast.** Commands that run now confirm with an ephemeral toast, matching the
   existing failure toast.
 
+- **OpenRouter credit usage.** OpenRouter joins the AI usage panel, the topbar and the usage
+  reading switches (off until turned on). With the OpenRouter API key from voice it shows that
+  key's spend today, this week and this month, its limit and the budget that blocks it first. An
+  optional management key, checked with OpenRouter and kept in the system keychain, adds the
+  account balance (credits bought, used and left), 30-day activity and the most expensive models.
+  The card leads with the percentage used of the tightest cap and estimates how many days the
+  balance lasts at the last week's pace; the topbar pill shows the dollars left. Alethe warns once
+  at 80% used or 3 days left, again at 95% or 1 day left, and when the balance is used up, with a
+  system notification while the window is in the background.
 - **Cleaner Markdown viewer tabs.** The right-sidebar document tabs now use a compact strip with a
   clearer active state, hidden scrollbar chrome, and a less prominent file path row.
 - **Easier hands-free voice sending.** Short Portuguese send phrases such as “manda”, “envia” and
@@ -53,6 +188,24 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
   sentence with a send phrase such as "thanks Jev" or "send it" and it fires as soon as
   the phrase is recognised, and a pause of about two seconds sends by itself. Releasing
   F9 or clicking the stop button still works.
+- **The `alethe` command gains `--version`, `--help` and `update`.** `alethe update` installs a
+  newer release from the terminal, and refuses while Alethe is open, since installing would close it
+  and its terminals. A command installed by an older release shows as outdated in Preferences →
+  Integrations until it is reinstalled.
+- **Worker cards now show each worker's model and effort**, including whether each value came from
+  the planner, a role, a fallback role, or the CLI default.
+- **Notifications stay within reach after their toasts disappear.** Open the title-bar bell to
+  browse recent notifications and clear the history from any view.
+- **AI Memory has its own Preferences page.** Check the service status and control it directly, even
+  while the feature is disabled.
+- **Claude Code's fullscreen renderer is now a choice, and it starts off.** In fullscreen rendering
+  Claude Code draws on the terminal's alternate screen and takes the mouse, so scrolling, selecting
+  and searching belong to the agent instead of the pane — on a slow terminal, that is also where a
+  fast scroll tears. Alethe launches Claude Code in the classic renderer, the same ground Codex gets,
+  and Preferences → Terminal has a *Claude Code fullscreen rendering* switch for anyone who wants the
+  fullscreen view back. Existing profiles keep working: the switch starts off, and turning it on
+  applies to terminals opened afterwards.
+
 - **Turning on AI Memory now takes you to a working install, and recall actually works.** The switch
   in Preferences → Features grew a panel beneath it: whether ai-memory is there, a button to install
   it — the download checked against the hash the project publishes — and whether it is running, with
@@ -307,9 +460,72 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
   panel now list each model-scoped weekly limit, such as Fable, below the Opus row, and the
   orchestrator counts them when it checks Claude's remaining quota
   ([#208](https://github.com/Kc1t/alethe-agents/issues/208)).
+- **A fuller About page.** Preferences → About now shows who builds Alethe, with links to the
+  creator's GitHub, YouTube, Instagram, and LinkedIn; shortcuts to report a bug, request a feature,
+  or open a pull request; and the license, privacy notes, source code, data folder, and logs.
+  **Older versions** lists earlier releases from GitHub and installs the chosen one through the
+  signed updater after offering a backup; releases from before signed updates link to their
+  installer instead.
 
 ### Changed
 
+- **ai-memory 3.x.** Preferences installs ai-memory 3.1.1. Agents use its token-aware stdio bridge
+  on 3.x and retain HTTP on 2.x. Version detection times out after three seconds.
+
+- **Jev uses the app's OpenRouter key.** The OpenRouter key Jev kept in its own settings moves to
+  the system keychain at startup, where Preferences → Voice manages it. Jev 1.1 reads it from there
+  and leaves local model downloads to Preferences → Voice; Jev 1.0 needs that update for cloud
+  dictation, since the command that took a raw key from the plugin is gone. The catalogue offers
+  each app the newest release it can run, so older Alethe versions keep listing Jev 1.0.
+- **New default look.** A fresh install starts on the Elite Pure Black theme with the clean visual
+  style, reduced motion, 90% zoom, the Dark Lemon terminal theme, and wider sidebars. Saved
+  preferences are kept. Without a profile photo, the avatar shows the app icon and follows the
+  icon chosen in Appearance.
+- **Agents tab grouped by project and planner.** Workers and subagents now sit under their
+  project and the terminal that delegated them, with each agent's icon, a summary of what is
+  running, waiting on you, or queued, and cost per project. Finished work folds under a toggle,
+  a blocked worker shows the command it wants to run next to Approve and Decline, clicking a
+  planner jumps to its terminal, and a This planner / All switch widens the view while a planner
+  is focused. The board button reopens the project's existing board instead of adding another.
+- **Consistent selects in Settings.** Every select in Settings uses the same dropdown as the rest of
+  the app, at a steady width instead of stretching across the page or shrinking to its text. The
+  current choice is marked with a check, and options show the agent icon or the theme colors where
+  that helps. The accent color and icon pickers for custom agents show agent names and icon
+  previews instead of internal ids. Clicking the label of the worker count or a 9Router setting no
+  longer presses its first button, and Esc on an open select closes only the select instead of the
+  whole Settings window.
+- **The orchestration skill is now `alethe` v21,** vendored from
+  [`Kc1t/alethe-orchestrate-skill`](https://github.com/Kc1t/alethe-orchestrate-skill): a playbook
+  editor and HTML reports, real quota checks with a stop line, a freestyle mode that only watches
+  cost, and playbook conditions on a model's price (`price-above`) and the spend so far
+  (`spent-above`). Installing it replaces an `alethe-orchestrate` copy that Alethe installed; a folder you made
+  yourself is left alone.
+- **Jev is now a plugin.** Voice commands, Ctrl+E dictation, the Jev history tab, and the voice
+  settings moved out of the app into the `alethe.jev` plugin, installed from Preferences → Plugins.
+  Without it, Ctrl+Shift+Space and Ctrl+E do nothing and the Jev tab is gone. Existing voice settings
+  and the decisions API key are handed to the plugin the first time it runs. Voice settings no longer
+  sync between computers.
+- **Plugins can do more.** A plugin can now draw over the window, add sections to Preferences →
+  Integrations (found by the settings search), read the open projects and terminals, open, focus,
+  close and type into terminals, show notifications, and follow app events. Each of these is a
+  separate permission shown in the trust dialog before the plugin is turned on. These additions are
+  plugin API version 2: existing plugins keep working, and plugins that need version 2 are hidden
+  from older versions of Alethe instead of failing there.
+- Release builds now connect to the hosted Alethe Cloud server. Before, they pointed at a local address
+  and cloud sign-in could not complete.
+- The Alethe Cloud session token is stored in the system credential store instead of a plain file,
+  and signing out also revokes the device on the server.
+- **One agent list everywhere.** Onboarding now also detects the Cursor CLI, and agent names in
+  onboarding and Preferences → Terminal match the rest of the app (for example "Claude Code").
+- **Backups restore the whole profile.** An export now also carries the profile name, the terminal
+  prompt history, open Markdown tabs, and folded settings sections, and saves the profile photo and
+  project logos that were only links inside the file. Importing puts all of it back, and a
+  notification says what the backup holds.
+- Backups no longer include the shared browser session, MCP configuration backups, downloaded speech
+  models and tools, or this device's cloud session. Importing a backup keeps the current device signed
+  in and resets its sync state, so the next sync cannot delete anything.
+- GitHub Gist sync is being retired. New connections are no longer offered; a connected profile can
+  still download its Gist once before moving to Alethe Cloud.
 - Plugin Market profiles now open in a modal without adding workspace panes or requiring a project.
   The sidebar and preferences catalogue share status/source filters, sorting, result counts, and
   accent-insensitive multiword search across names, authors, descriptions, repositories, and permissions.
@@ -387,7 +603,107 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
   again when it is saved, after your edits, its generated title is redacted too, and the temporary
   context file is created owner-only and never overwrites an existing one.
 
+### Security
+
+- **Agent hooks.** Hook endpoints accept only POST requests to exact routes, hook payloads stay
+  out of logs, and temporary Claude hook settings are removed on exit.
+
 ### Fixed
+
+- ai-memory installs accept Unix archives with a root directory entry, find manually installed
+  binaries outside the app PATH, and avoid duplicating Claude Code capture hooks already configured.
+- **Light terminal contrast.** Light themes, including plugin themes, enforce a WCAG-AA contrast
+  floor for agent output and use darker bright ANSI colors for readable terminal text.
+
+- **Voice server keys follow their URL.** Changing the address of a saved voice server now clears
+  its key unless a new one is entered with it, so a stored key is never sent to a host it was not
+  typed for.
+- **Handing a conversation to Codex survives its startup dialogs.** The handoff prompt now waits
+  until Codex's composer is ready and no trust, hooks-review or update dialog is open, so it no longer
+  picks an option in one and fails with "config/read failed"; it is sent once the dialog is closed.
+- **A handoff packet lasts as long as its pane.** The context file the other agent reads is no longer
+  deleted after its first reply, so a turn that fails can be sent again; packets no pane uses are
+  removed when Alethe starts.
+- **Old Alethe hooks leave `.codex/config.toml`.** Earlier releases added another copy of their
+  subagent hooks on every Codex launch; the next launch removes them and keeps only the current block.
+- **Skill installs report each agent.** A failure for one agent no longer hides what happened for the
+  others, an interrupted first install no longer leaves a folder that reads as "name already in use",
+  and updates replace each file in one step.
+- **Shared and system skills are protected.** The shared copy other agents link to can no longer be
+  deleted from one agent's row, and Codex system skills can no longer be removed.
+- **Orchestration preferences reach the skill on macOS and Linux.** The app now writes
+  `~/.config/alethe/orchestrate.json`, or the path in `ALETHE_ORCHESTRATE_POLICY`, which is the file
+  the skill reads.
+- **Saved setups that name the skill `alethe-orchestrate` still install it,** and only for Claude Code
+  and Codex, the agents it supports.
+- **Searchable pickers inside dialogs keep the cursor in their search box.** Model pickers in
+  Preferences and the project agent settings lost focus to the dialog as soon as the list opened.
+- **Antigravity panes find a new conversation right away.** Alethe also reads Antigravity's
+  `last_conversations.json`, so a chat started in a pane is saved and reopened even before
+  `conversation_metadata.json` lists it, including in folders whose path has a space.
+- **Long Claude Code replies no longer get their earlier lines written over the newer ones on
+  Windows** ([#303](https://github.com/Kc1t/alethe-agents/issues/303)). Panes force a terminal
+  resize on many events (switching tabs, the inspector, resuming), and ConPTY repaints the whole
+  visible screen on every resize, even to the size it already has. A resize to the pty's current
+  size is now skipped, so only a real size change repaints.
+- **Typing accented characters quickly no longer duplicates letters or brings back text already
+  sent.** The terminal empties its hidden input buffer once typing pauses, never during an open IME
+  composition.
+- **Remote control can send a message Claude Code queued while busy.** With the message box empty,
+  tapping send twice on the phone sends the queued message right away, the phone's take on Claude
+  Code's Ctrl+X Ctrl+S.
+- **On macOS, the window uses the native title bar and traffic lights**, so maximize, restore and
+  display changes behave like in other Mac apps. On every platform, double-clicking an empty part
+  of the title bar now maximizes or restores the window.
+- **Shift+Enter adds a line instead of sending.** Claude Code and Codex now get a line break in the
+  prompt. In Claude Code panes, Ctrl+Enter (Cmd+Enter on macOS) sends the typed message right away,
+  even while the agent is busy and Enter would only queue it.
+- **Long task titles in the Todo sidebar wrap instead of being cut off.** Tags and project links
+  move below the title, and rows keep their height when the hover actions appear.
+- **On macOS, agents installed with npm, bun, pnpm, Volta, nvm or fnm are found when Alethe is
+  opened from the Dock or Finder.** Remote control's Tailscale mode also finds the CLI bundled in
+  Tailscale.app or installed with Homebrew.
+- **Picking `C:\Windows\System32\wsl.exe` as the terminal shell opens WSL**, the same as `wsl.exe`.
+- **Right-click paste no longer pastes twice.** The same clipboard text arriving again within two
+  seconds is ignored by the terminal.
+- **Cloning keeps the repository's own agent guides.** Cloning a repository from Alethe no longer
+  overwrites its `AGENTS.md` or `CLAUDE.md` with the generated briefing, and a README with accented
+  or other non-ASCII characters no longer crashes the briefing step.
+- **New terminals open right away on macOS.** Alethe read the Mac's free memory as 0 MB whenever
+  macOS was compressing memory, so every new CLI sat on "Waiting for memory" for up to 45 seconds,
+  the RAM indicator stayed red, and the resource manager kept trimming caches and hibernating idle
+  terminals. Free memory now comes from the share the macOS kernel reports as available.
+- **Moving a project into a group works again.** **Move to group…** now lists the groups to pick
+  from (nested ones with their path) instead of asking for a typed number, which did nothing on
+  macOS, and a project already in a group can move straight to another one. Dropping a dragged
+  project anywhere on a group's area, including the "No projects yet" space of an empty group,
+  moves it into that group; before, only the group's name strip took the drop.
+
+- **Exporting a backup no longer stops at a permission error.** Files the embedded browser keeps
+  locked while Alethe is open are left out, and any other file in use is skipped and named in the
+  confirmation instead of failing the whole export.
+- On Linux, terminals and files or links opened from the AppImage no longer inherit the AppImage's
+  bundled library and runtime paths. System tools such as `curl` and `python` run normally inside
+  Alethe terminals again, and links open in the browser with its own libraries.
+- **Pasting images and Finder files into a terminal works on macOS.** Ctrl+V or Cmd+V with a
+  screenshot or a copied image now saves it as a PNG and pastes its path, so Claude Code attaches
+  it as an image; files copied in Finder paste as their paths. Before, only text was read and an
+  image on the clipboard pasted nothing.
+
+- Closing or killing a terminal on Windows now also ends the dev servers and background jobs it
+  started, even when the shell that launched them had already exited. Each terminal runs inside its
+  own Job Object, so a `npm run dev` left behind by an agent no longer keeps holding memory.
+- Starting Alethe or saving the Orchestration preferences no longer erases the budgets, model
+  tiers and provider order set through the orchestration skill. Alethe now updates only the
+  preferences it shows and moves your preferred provider to the front of the saved order.
+- Worktrees the orchestration skill creates under `.alethe/worktrees/` no longer show in
+  `git status` or get staged by `git add -A`.
+- Kimi workers started by the orchestration skill on Windows no longer lose everything after the
+  first line of their task, and Kimi write workers no longer fail at startup. Codex resumes keep
+  the worker's sandbox, and a Claude worker that times out can be resumed.
+- **The Claude usage indicator shows up in the top bar again with Orchestration open.** Each
+  Orchestration pane read Claude usage on its own every minute, so the usage service refused the
+  reads and the top bar never got one to show. All readers now share a single request.
 
 - **A Claude session you named now shows that name.** Naming a session (`/rename`, `--name`) left
   the sidebar and the tab showing `<system-reminder> The user named this session "…"` instead: Alethe
@@ -426,6 +742,36 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
 - Terminal clipboard events now use bounded paste writes instead of bypassing them through xterm's
   keyboard input path. Failed or slow paste writes no longer automatically restart the live agent session,
   and read-only terminals reject clipboard input.
+- **Switching accounts no longer overwrites the new account's plugin data.** The Todo list and
+  other plugin data were kept from the previous account after a switch, and the next change saved
+  them over the new account's. Switching now reloads the app, as creating or deleting an account
+  already did.
+
+- **Orchestrator quota warnings now identify the limit that triggered them** and use raw utilization
+  so their threshold matches the usage indicators.
+- **GitHub sync is reachable from Preferences → Account and reports push and pull results.**
+  Existing profiles can open the sync dialog from Account settings without repeating onboarding,
+  and GitHub Gist or cloud push and pull now show a toast when they succeed or fail, alongside the
+  inline message.
+- **Pairing from Preferences now shows its QR code and address.** You can scan the code or enter
+  its address manually while pairing is active.
+- **Routing rules now show their role on the orchestrator board**, instead of an incomplete
+  usage label.
+- **The orchestration board no longer auto-fits while hovered or after you move its view.** Live
+  worker updates and container resizes preserve the view you chose, while Fit and tab switches
+  still bring the selected board into view.
+- **Returning to a pane no longer throws away where you were reading.** A pane that produced output
+  while it was hidden rebuilds its screen when you come back to it, and that rebuild left the view at
+  the newest line: scrolling up through an agent's answer and switching tabs dropped you back at the
+  end of the conversation. Alethe now looks for the text that was on screen again in the rebuilt
+  buffer and puts the reader back on it — falling back to the distance from the end when the replay no
+  longer has those lines — and a pane that was following the output keeps following it.
+
+- **The wheel no longer goes dead in a pane an agent took over and left.** Claude Code in fullscreen
+  rendering draws on the terminal's alternate screen and takes the mouse; when a session ended
+  without undoing those modes, the pane kept sending wheel events to a process that was gone, so
+  nothing scrolled — not the app, not the history. Alethe now restores the pane when such a session
+  exits, and a wheel over a pane stuck that way brings the scrollback back instead of doing nothing.
 
 - **Reconnecting a planner no longer starts a duplicate shell.** Asking the lead agent to open a dev
   server or watcher it already has running on the board (for example after reopening the app, or

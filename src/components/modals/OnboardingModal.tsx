@@ -2,25 +2,30 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { Github, Loader2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { resolveAgentCliCommand } from '../../lib/agentProviders'
 import { latestVersionFor } from '../../lib/agentVersions'
-import { applyCloudPayload, buildCloudPayload } from '../../lib/cloudSync'
 import { FEATURES } from '../../lib/features'
 import { LOCALES, useT } from '../../lib/i18n'
-import { DEFAULT_PROFILE_IMAGE_URL, getProfileInitial } from '../../lib/profile'
+import { defaultProfileImageUrl, getProfileInitial } from '../../lib/profile'
+import { syncNow } from '../../lib/sync'
+import { notifyCloudStatusChanged } from '../../lib/sync/events'
 import {
   agentCliVersion,
+  type CloudDeviceStart,
   cloudSyncDeviceFinish,
   cloudSyncDeviceStart,
-  cloudSyncPull,
-  cloudSyncPush,
   cloudSyncStatus,
   findCliLauncher,
   openInBrowser,
-  type CloudDeviceStart,
 } from '../../lib/tauri'
 import { getThemeIcon } from '../../lib/themeIcons'
-import { resolveAgentCliCommand } from '../../lib/agentProviders'
-import type { AgentType } from '../../lib/types'
+import {
+  AGENT_TYPE_LABELS,
+  ALL_AGENT_TYPES,
+  isShellAgentType,
+  type AgentType,
+  type BuiltinAgentType,
+} from '../../lib/types'
 import { useProjectsStore } from '../../stores/projectsStore'
 import { useUiStore } from '../../stores/uiStore'
 import { ImageInput } from './ImageInput'
@@ -55,19 +60,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
 
 type CodingAgent = Exclude<AgentType, 'shell'>
 
-const AGENTS: { id: CodingAgent; label: string }[] = [
-  { id: 'claude', label: 'Claude' },
-  { id: 'codex', label: 'Codex' },
-  { id: 'copilot', label: 'GitHub Copilot' },
-  { id: 'antigravity', label: 'Antigravity' },
-  { id: 'opencode', label: 'OpenCode' },
-  { id: 'freebuff', label: 'Freebuff' },
-  { id: 'mimo', label: 'Mimo' },
-  { id: 'kiro', label: 'Kiro CLI' },
-  { id: 'kimi', label: 'Kimi Code' },
-  { id: 'grok', label: 'Grok Build' },
-  { id: 'codewhale', label: 'Codewhale' },
-]
+const AGENTS: { id: CodingAgent; label: string }[] = ALL_AGENT_TYPES.filter(
+  (id): id is Exclude<BuiltinAgentType, 'shell' | 'wsl'> => !isShellAgentType(id),
+).map((id) => ({ id, label: AGENT_TYPE_LABELS[id] }))
 
 export function OnboardingModal() {
   const t = useT()
@@ -104,7 +99,7 @@ export function OnboardingModal() {
   const trimmedName = name.trim()
   const trimmedPhotoUrl = photoUrl.trim()
   const initial = getProfileInitial(trimmedName)
-  const previewAvatarUrl = trimmedPhotoUrl || DEFAULT_PROFILE_IMAGE_URL
+  const previewAvatarUrl = trimmedPhotoUrl || defaultProfileImageUrl(preferences.appIconTheme)
 
   useEffect(() => {
     if (preferences.onboardingDone) return
@@ -175,7 +170,7 @@ export function OnboardingModal() {
     void detectAgents()
     cloudSyncStatus()
       .then((status) => {
-        setCloudConfigured(status.configured)
+        setCloudConfigured(true)
         if (status.connected) setCloudLogin(status.login)
       })
       .catch(() => setCloudConfigured(false))
@@ -199,11 +194,7 @@ export function OnboardingModal() {
       profileImageUrl: trimmedPhotoUrl,
     })
     useUiStore.getState().setActiveView('home')
-    if (cloudLogin) {
-      void buildCloudPayload(useProjectsStore.getState().preferences)
-        .then((payload) => cloudSyncPush(payload))
-        .catch(() => undefined)
-    }
+    if (cloudLogin) void syncNow().catch(() => undefined)
   }
 
   const signInWithGithub = async () => {
@@ -221,9 +212,9 @@ export function OnboardingModal() {
       }
       let finalName = name.trim() || status.name || status.login || ''
       setName(finalName)
+      notifyCloudStatusChanged()
       try {
-        const payload = await cloudSyncPull()
-        await applyCloudPayload(payload, setPreferences)
+        await syncNow()
         const restored = useProjectsStore.getState().preferences
         if (restored.displayName) {
           finalName = restored.displayName
@@ -234,7 +225,7 @@ export function OnboardingModal() {
           setImgFailed(false)
         }
       } catch {
-        // First device — nothing stored remotely yet.
+        // Sync errors must not block onboarding.
       }
       if (finalName) setStep((value) => Math.max(value, 1))
     } catch {
@@ -338,6 +329,7 @@ export function OnboardingModal() {
                 <p className={styles.questionDesc}>{t('onboarding.profileSubtitle')}</p>
 
                 <input
+                  id="onboarding-name"
                   data-autofocus
                   className={styles.nameInput}
                   value={name}

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { PluginManifest } from '../tauri'
+import { PLUGIN_API_VERSION } from './constants'
 import type { PluginContext, PluginModule, ThemeContribution } from './types'
 
 const bundled: { manifest: PluginManifest; load: () => Promise<PluginModule> }[] = []
@@ -27,11 +28,63 @@ vi.mock('../i18n', () => ({
 
 const disabledIds: string[] = []
 const setEnabledMock = vi.fn(async () => {})
+const unlistenMock = vi.fn()
+const listenMock = vi.fn(
+  async (_event: string, _handler: (payload: unknown) => void) => unlistenMock,
+)
 vi.mock('../tauri', () => ({
   pluginsDisabled: async () => disabledIds,
   pluginsList: async () => [],
   pluginSetEnabled: (id: string, enabled: boolean) => setEnabledMock(id, enabled),
   pluginInvoke: (command: string, args?: Record<string, unknown>) => invokeMock(command, args),
+  pluginListen: (event: string, handler: (payload: unknown) => void) => listenMock(event, handler),
+}))
+
+const appearanceListeners = new Set<() => void>()
+let preferences = { uiTheme: 'dark', visualStyle: 'normal', motionPreference: 'animated' }
+vi.mock('../../stores/projectsStore', () => ({
+  useProjectsStore: {
+    getState: () => ({ preferences }),
+    subscribe: (listener: () => void) => {
+      appearanceListeners.add(listener)
+      return () => appearanceListeners.delete(listener)
+    },
+  },
+}))
+const { keybindingsSuspended } = await import('../keybindingSuspension')
+
+const pushToastMock = vi.fn()
+vi.mock('../../stores/uiStore', () => ({
+  useUiStore: { getState: () => ({ pushToast: pushToastMock }) },
+}))
+vi.mock('./terminals', () => ({
+  liveSessionIdOf: () => 'session-1',
+  locateSession: () => ({
+    ptyId: 'pty-1',
+    tab: { type: 'claude', sessionId: 'conversation', cwd: '/repo' },
+    terminal: { cwd: '/repo' },
+  }),
+  createPluginTerminals: (require: (capability: string) => void) => ({
+    sessions: () => {
+      require('terminal.read')
+      return []
+    },
+  }),
+}))
+vi.mock('./presentation', () => ({ pluginAgents: {}, pluginComponents: {} }))
+vi.mock('./workspace', () => ({
+  createPluginWorkspace: (require: (capability: string) => void) => ({
+    snapshot: () => {
+      require('workspace.read')
+      return {
+        projects: [],
+        terminals: [],
+        agents: [],
+        focusedProjectId: null,
+        focusedTerminalId: null,
+      }
+    },
+  }),
 }))
 
 const {
@@ -43,8 +96,14 @@ const {
   runCommand,
   setPluginEnabled,
 } = await import('./host')
-const { commandContributions, paneContributions, sidebarTabContributions, themeContributions } =
-  await import('./registry')
+const {
+  commandContributions,
+  overlayContributions,
+  paneContributions,
+  settingsContributions,
+  sidebarTabContributions,
+  themeContributions,
+} = await import('./registry')
 const { agentProviderContributions } = await import('../agentProviders')
 
 function Dummy() {
@@ -90,9 +149,13 @@ function entryFor(id: string) {
 }
 
 beforeEach(() => {
+  preferences = { uiTheme: 'dark', visualStyle: 'normal', motionPreference: 'animated' }
+  appearanceListeners.clear()
   bundled.length = 0
   disabledIds.length = 0
   invokeMock.mockClear()
+  listenMock.mockClear()
+  unlistenMock.mockClear()
   setEnabledMock.mockClear()
   for (const key of Object.keys(registeredMessages)) delete registeredMessages[key]
 })
@@ -223,14 +286,24 @@ describe('manifest validation', () => {
     expect(entryFor('test.plugin')?.error).toBe('unknown_activation_event:*')
   })
 
-  it('refuses a manifest built for another api version', async () => {
+  it('refuses a manifest built for a newer api version', async () => {
     const load = vi.fn(async () => ({ activate: vi.fn() }))
-    bundled.push({ manifest: manifest({ apiVersion: 2 }), load })
+    bundled.push({ manifest: manifest({ apiVersion: PLUGIN_API_VERSION + 1 }), load })
 
     await initPluginHost()
 
     expect(load).not.toHaveBeenCalled()
-    expect(entryFor('test.plugin')?.error).toBe('unsupported_api_version:2')
+    expect(entryFor('test.plugin')?.error).toBe(`unsupported_api_version:${PLUGIN_API_VERSION + 1}`)
+  })
+
+  it('still runs a manifest written for api version 1', async () => {
+    const activate = vi.fn()
+    bundled.push({ manifest: manifest({ apiVersion: 1 }), load: async () => ({ activate }) })
+
+    await initPluginHost()
+
+    expect(entryFor('test.plugin')?.error).toBeNull()
+    expect(activate).toHaveBeenCalled()
   })
 
   it('refuses a manifest with a blanket capability', async () => {
@@ -376,9 +449,89 @@ describe('imperative contributions', () => {
     expect(entryFor('test.plugin')?.error).toBe('capability_denied:test.plugin:ui.theme')
     expect(themeContributions.get('test-theme')).toBeUndefined()
   })
+
+  it('mounts overlays and settings sections, and removes them on disable', async () => {
+    bundled.push({
+      manifest: manifest({ capabilities: ['ui.overlay', 'ui.settings'] }),
+      load: async () => ({
+        activate: (ctx: PluginContext) => {
+          ctx.contributes.overlay({ id: 'test.bar', component: Dummy })
+          ctx.contributes.settings({ id: 'test.key', title: () => 'Key', component: Dummy })
+        },
+      }),
+    })
+
+    await initPluginHost()
+
+    expect(entryFor('test.plugin')?.error).toBeNull()
+    expect(overlayContributions.get('test.bar')).toBeDefined()
+    expect(settingsContributions.get('test.key')?.title()).toBe('Key')
+
+    await setPluginEnabled('test.plugin', false)
+    expect(overlayContributions.get('test.bar')).toBeUndefined()
+    expect(settingsContributions.get('test.key')).toBeUndefined()
+  })
+
+  it('denies an overlay the manifest did not ask for', async () => {
+    bundled.push({
+      manifest: manifest({ capabilities: ['ui.settings'] }),
+      load: async () => ({
+        activate: (ctx: PluginContext) => {
+          ctx.contributes.overlay({ id: 'test.bar', component: Dummy })
+        },
+      }),
+    })
+
+    await initPluginHost()
+
+    expect(entryFor('test.plugin')?.error).toBe('capability_denied:test.plugin:ui.overlay')
+    expect(overlayContributions.get('test.bar')).toBeUndefined()
+  })
 })
 
 describe('plugin context', () => {
+  it('exposes voice through its capability gate and disposes listeners on disable', async () => {
+    let captured: PluginContext | null = null
+    bundled.push({
+      manifest: manifest({ apiVersion: 3, capabilities: ['voice.speak'] }),
+      load: async () => ({
+        activate: (ctx: PluginContext) => {
+          captured = ctx
+        },
+      }),
+    })
+    await initPluginHost()
+    expect(() => captured!.voice.startCapture()).toThrow(
+      'capability_denied:test.plugin:voice.listen',
+    )
+    await captured!.voice.speak('hello')
+    expect(invokeMock).toHaveBeenCalledWith('tts_speak', expect.objectContaining({ text: 'hello' }))
+    const stop = vi.fn()
+    listenMock.mockResolvedValueOnce(stop)
+    captured!.voice.onStart(() => {})
+    await Promise.resolve()
+    await setPluginEnabled('test.plugin', false)
+    expect(stop).toHaveBeenCalledOnce()
+  })
+
+  it('rolls voice listeners back when activation fails', async () => {
+    const stop = vi.fn()
+    listenMock.mockResolvedValueOnce(stop)
+    bundled.push({
+      manifest: manifest({ apiVersion: 3, capabilities: ['voice.hud'] }),
+      load: async () => ({
+        activate: (ctx: PluginContext) => {
+          ctx.voice.hud.onAction(() => {})
+          throw new Error('activation_failed')
+        },
+      }),
+    })
+    await initPluginHost()
+    await Promise.resolve()
+    expect(entryFor('test.plugin')).toMatchObject({ active: false, error: 'activation_failed' })
+    expect(stop).toHaveBeenCalledOnce()
+  })
+
   it('namespaces registered messages and resolves them through t()', async () => {
     let captured: PluginContext | null = null
     bundled.push({
@@ -420,6 +573,52 @@ describe('plugin context', () => {
     )
     await expect(captured!.invoke('spawn_pty')).rejects.toThrow('capability_denied')
     expect(invokeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('gates event subscriptions and stops listening when the plugin is disabled', async () => {
+    let captured: PluginContext | null = null
+    bundled.push({
+      manifest: manifest({ capabilities: ['listen:speech*'] }),
+      load: async () => ({
+        activate: (ctx: PluginContext) => {
+          captured = ctx
+        },
+      }),
+    })
+
+    await initPluginHost()
+
+    const handler = vi.fn()
+    captured!.listen('speech://download-progress', handler)
+    expect(listenMock).toHaveBeenCalledWith('speech://download-progress', handler)
+    expect(() => captured!.listen('pty://data/1', handler)).toThrow(
+      'capability_denied:test.plugin:listen:pty://data/1',
+    )
+
+    await vi.waitFor(() => expect(listenMock).toHaveBeenCalledTimes(1))
+    await Promise.resolve()
+    await setPluginEnabled('test.plugin', false)
+    expect(unlistenMock).toHaveBeenCalledOnce()
+  })
+
+  it('passes the workspace through its capability gate and shows toasts', async () => {
+    let captured: PluginContext | null = null
+    bundled.push({
+      manifest: manifest(),
+      load: async () => ({
+        activate: (ctx: PluginContext) => {
+          captured = ctx
+        },
+      }),
+    })
+
+    await initPluginHost()
+
+    expect(() => captured!.workspace.snapshot()).toThrow(
+      'capability_denied:test.plugin:workspace.read',
+    )
+    captured!.ui.toast({ title: 'Done' })
+    expect(pushToastMock).toHaveBeenCalledWith({ title: 'Done', body: '' })
   })
 })
 
@@ -498,4 +697,119 @@ describe('setPluginEnabled', () => {
     expect(sidebarTabContributions.get('test.view')).toBeUndefined()
     expect(entryFor('test.plugin')).toMatchObject({ active: false, enabled: false })
   })
+})
+
+describe('additive plugin API 3 host facilities', () => {
+  async function activate(capabilities: string[] = []) {
+    let context!: PluginContext
+    bundled.push({
+      manifest: manifest({ apiVersion: 3, capabilities }),
+      load: async () => ({
+        activate: (ctx) => {
+          context = ctx
+        },
+      }),
+    })
+    await initPluginHost()
+    return context
+  }
+
+  it('reports appearance without a capability, emits actual changes, and disposes on disable', async () => {
+    const ctx = await activate()
+    expect(PLUGIN_API_VERSION).toBe(3)
+    expect(ctx.appearance()).toEqual({ theme: 'dark', visualStyle: 'normal', reducedMotion: false })
+    const handler = vi.fn()
+    const subscription = ctx.onAppearanceChange(handler)
+    expect(ctx.subscriptions).toContain(subscription)
+    appearanceListeners.forEach((listener) => listener())
+    expect(handler).not.toHaveBeenCalled()
+    preferences = { uiTheme: 'light', visualStyle: 'glass', motionPreference: 'reduced' }
+    appearanceListeners.forEach((listener) => listener())
+    expect(handler).toHaveBeenCalledExactlyOnceWith({
+      theme: 'light',
+      visualStyle: 'glass',
+      reducedMotion: true,
+    })
+    await setPluginEnabled('test.plugin', false)
+    expect(appearanceListeners.size).toBe(0)
+  })
+
+  it('holds keybindings until every Disposable is released, including on disable', async () => {
+    const ctx = await activate()
+    const first = ctx.ui.suspendKeybindings()
+    const second = ctx.ui.suspendKeybindings()
+    expect(ctx.subscriptions).toContain(first)
+    expect(keybindingsSuspended()).toBe(true)
+    first.dispose()
+    first.dispose()
+    expect(keybindingsSuspended()).toBe(true)
+    second.dispose()
+    expect(keybindingsSuspended()).toBe(false)
+    ctx.ui.suspendKeybindings()
+    await setPluginEnabled('test.plugin', false)
+    expect(keybindingsSuspended()).toBe(false)
+  })
+
+  it('releases appearance subscriptions and shortcut holds when activation fails', async () => {
+    bundled.push({
+      manifest: manifest({ apiVersion: 3 }),
+      load: async () => ({
+        activate: (ctx) => {
+          ctx.onAppearanceChange(() => {})
+          ctx.ui.suspendKeybindings()
+          throw new Error('activation failed')
+        },
+      }),
+    })
+    await initPluginHost()
+    expect(entryFor('test.plugin')?.error).toBe('activation failed')
+    expect(appearanceListeners.size).toBe(0)
+    expect(keybindingsSuspended()).toBe(false)
+  })
+
+  it('gates agent observation and approval independently and tracks their listeners', async () => {
+    const ctx = await activate(['agent.observe'])
+    const off = ctx.agents.onHook(() => {})
+    expect(ctx.subscriptions).toContain(off)
+    await expect(ctx.agents.decidePermission('request', 'allow')).rejects.toThrow(
+      'capability_denied:test.plugin:agent.approve',
+    )
+    expect(() => ctx.agents.onPermissionReleased(() => {})).toThrow(
+      'capability_denied:test.plugin:agent.approve',
+    )
+    await Promise.resolve()
+    await setPluginEnabled('test.plugin', false)
+    expect(unlistenMock).toHaveBeenCalledOnce()
+  })
+
+  it('registers settings under Voice and retains Integrations as the default category', async () => {
+    const ctx = await activate(['ui.settings'])
+    ctx.contributes.settings({
+      id: 'test.voice',
+      category: 'voice',
+      title: () => 'Conversation',
+      component: Dummy,
+    })
+    ctx.contributes.settings({ id: 'test.default', title: () => 'Default', component: Dummy })
+    expect(settingsContributions.get('test.voice')?.category).toBe('voice')
+    expect(settingsContributions.get('test.default')?.category).toBeUndefined()
+    await setPluginEnabled('test.plugin', false)
+    expect(settingsContributions.get('test.voice')).toBeUndefined()
+  })
+})
+
+it('releases conversation hook holds when plugin activation fails', async () => {
+  const { voiceConversationHooksEnabled } = await import('../voice/conversationHooks')
+  bundled.push({
+    manifest: manifest({ apiVersion: 3, capabilities: ['voice.converse'] }),
+    load: async () => ({
+      activate: (ctx) => {
+        ctx.voice.setConversationHooks(true)
+        expect(voiceConversationHooksEnabled()).toBe(true)
+        throw new Error('activation failed')
+      },
+    }),
+  })
+  await initPluginHost()
+  expect(voiceConversationHooksEnabled()).toBe(false)
 })

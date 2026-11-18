@@ -24,7 +24,7 @@ export type BuiltinAgentType =
 export type AgentType = BuiltinAgentType | (string & {})
 
 /** Providers whose subscription usage Alethe can read. */
-export type UsageProviderId = 'claude' | 'codex' | 'antigravity' | 'kimi'
+export type UsageProviderId = 'claude' | 'codex' | 'antigravity' | 'kimi' | 'openrouter'
 
 export const AGENT_TYPE_LABELS: Record<BuiltinAgentType, string> = {
   claude: 'Claude Code',
@@ -485,7 +485,13 @@ export type Project = {
   mergePostAction?: 'relocateToNewBranch' | 'relocateKeepSession' | 'closeTerminal'
 
   orphanWorktrees?: OrphanWorktree[]
+
+  toolingManifest?: ToolingManifest
+  pendingRelocation?: { originalPath: string }
+  localOverrides?: ProjectOverrideGroup[]
 }
+
+export type ProjectOverrideGroup = 'agents' | 'tooling'
 
 export type MarkdownComment = {
   id: string
@@ -611,31 +617,43 @@ export type RuleSet = {
 /** Which 9router install Alethe runs: the one it manages, or one the user installed themselves. */
 export type Router9Source = 'managed' | 'external'
 
-/** Local 9router proxy. Opt-in and off by default — nothing is installed or started implicitly. */
+/** Where routed agents connect: the local 9router process, or a hosted 9router-compatible gateway. */
+export type Router9Mode = 'local' | 'remote'
+
+/** Model ids the gateway expects. An empty id keeps the agent's own default. */
+export type Router9Models = {
+  opus: string
+  sonnet: string
+  haiku: string
+  codex: string
+}
+
+/** 9router routing. Opt-in and off by default — nothing is installed or started implicitly. */
 export type Router9Preferences = {
   enabled: boolean
   autoStart: boolean
+  mode: Router9Mode
   source: Router9Source
   port: number
   /** Endpoint key issued by the 9router dashboard. Stored in plaintext, like the Spotify secret. */
   apiKey: string
+  /** Remote mode: gateway base URL, without the `/v1` suffix. */
+  remoteUrl: string
+  models: Router9Models
   defaultForNewAgents: boolean
 }
 
 export const DEFAULT_ROUTER9_PREFERENCES: Router9Preferences = {
   enabled: false,
   autoStart: false,
+  mode: 'local',
   source: 'managed',
   port: ROUTER9_DEFAULT_PORT,
   apiKey: '',
+  remoteUrl: '',
+  models: { opus: '', sonnet: '', haiku: '', codex: '' },
   defaultForNewAgents: false,
 }
-
-export const DICTATION_CLOUD_MODELS = [
-  'openai/gpt-audio-mini',
-  'google/gemini-3.1-flash-lite',
-] as const
-export type DictationCloudModel = (typeof DICTATION_CLOUD_MODELS)[number]
 
 /** A named preset for delegated workers. A delegate call that names it gets exactly these values. */
 export type OrchestrationRole = {
@@ -741,8 +759,24 @@ export const DEFAULT_ROUTING_SETTINGS: RoutingSettings = {
   onBothCritical: 'ask',
 }
 
+export type CloudVoiceProviderId = 'openai' | 'elevenlabs' | 'gemini' | 'openrouter'
+export type VoiceServerKind = 'openai' | 'fish'
+export interface VoiceServer {
+  id: string
+  name: string
+  kind: VoiceServerKind
+  baseUrl: string
+  model: string | null
+  hasKey: boolean
+}
+export type VoiceServerErrorKind =
+  'policy' | 'network' | 'timeout' | 'auth' | 'badRequest' | 'badAudio' | 'missing' | 'other'
+export type VoiceProviderFlags = Partial<
+  Record<CloudVoiceProviderId, { configured: boolean; invalid: boolean }>
+>
+
 export type Preferences = {
-  /** Idioma da UI. Default 'en'. */
+  voiceProviders: VoiceProviderFlags
   language: Locale
   uiTheme: Theme
   /** Application-wide visual language. Normal preserves the production UI. */
@@ -810,11 +844,13 @@ export type Preferences = {
   usageShowCodex: boolean
   usageShowAntigravity: boolean
   usageShowKimi: boolean
+  usageShowOpenRouter: boolean
   /** Itens opcionais exibidos no canto direito da topbar. */
   topbarShowClaudeUsage: boolean
   topbarShowCodexUsage: boolean
   topbarShowAntigravityUsage: boolean
   topbarShowKimiUsage: boolean
+  topbarShowOpenRouterUsage: boolean
   topbarShowSync: boolean
   topbarShowProfile: boolean
   topbarShowMemory: boolean
@@ -858,22 +894,6 @@ export type Preferences = {
   rightSidebarWidth: number
 
   notifyOnLimitReset: boolean
-  /** Local speech-to-text into the active terminal. Off by default. */
-  dictationEnabled: boolean
-  /** Toggle = press Ctrl+E to start/stop; Hold = dictate while Ctrl+E is held. */
-  dictationMode: 'toggle' | 'hold'
-  /** Selected on-device STT model id (Parakeet TDT v3 by default). */
-  dictationModelId: string
-  dictationProvider: 'local' | 'openrouter'
-  dictationCloudModel: DictationCloudModel
-  /** Preferred microphone deviceId, or null for the OS default. */
-  dictationMicrophoneId: string | null
-  /** Cached microphone label when the preferred device is unplugged. */
-  dictationMicrophoneLabel: string | null
-  /** Decisions API key for voice commands. Empty disables the command bar. */
-  voiceCommandApiKey: string
-  /** Keep the microphone live between commands until the bar is closed. */
-  voiceKeepListening: boolean
   /** How many PTYs may spawn in parallel (global queue). Default 3. */
   spawnConcurrency: number
 
@@ -891,6 +911,8 @@ export type Preferences = {
   shellPath: string | null
   /** Font stack for the terminal. A Nerd Font is required for prompts such as oh-my-posh. */
   terminalFontFamily: string
+  // Default false keeps scrolling and searching with the pane in the classic renderer.
+  claudeFullscreen?: boolean
   /**
    * v3 — perfil de heap do Node.js para agentes (Claude, Codex, OpenCode).
    * Injeta --max-old-space-size e UV_THREADPOOL_SIZE no ambiente do PTY.
@@ -913,6 +935,8 @@ export type Preferences = {
   pomodoroLongBreakMinutes: number
   /** Mirrors `pomodoroStore`'s running session so it survives an app restart. */
   pomodoroSession: PomodoroSessionSnapshot | null
+
+  toolingManifest?: ToolingManifest
 }
 
 export type ResourcePolicyMode = 'smart-lru' | 'manual'
@@ -967,14 +991,15 @@ export type ProjectsFile = {
 export const DEFAULT_TERMINAL_FONT_FAMILY = 'Cascadia Mono, Consolas, "Courier New", monospace'
 
 export const DEFAULT_PREFERENCES: Preferences = {
+  voiceProviders: {},
   language: 'en',
-  uiTheme: 'elite-indigo',
-  visualStyle: 'normal',
-  motionPreference: 'animated',
+  uiTheme: 'elite-pure-black',
+  visualStyle: 'clean',
+  motionPreference: 'reduced',
   appIconTheme: 'elite-indigo',
-  uiZoom: 1,
+  uiZoom: 0.9,
   windowOpacity: 1,
-  terminalTheme: null,
+  terminalTheme: 'dark-lemon',
   enabledAgents: {
     shell: true,
     wsl: true,
@@ -1010,15 +1035,17 @@ export const DEFAULT_PREFERENCES: Preferences = {
   spotifyClientId: '',
   spotifyClientSecret: '',
   discordRichPresenceEnabled: false,
-  usageAccess: { claude: false, codex: false, antigravity: false, kimi: false },
+  usageAccess: { claude: false, codex: false, antigravity: false, kimi: false, openrouter: false },
   usageShowClaude: true,
   usageShowCodex: true,
   usageShowAntigravity: true,
   usageShowKimi: true,
+  usageShowOpenRouter: true,
   topbarShowClaudeUsage: true,
   topbarShowCodexUsage: true,
   topbarShowAntigravityUsage: true,
   topbarShowKimiUsage: false,
+  topbarShowOpenRouterUsage: true,
   topbarShowSync: true,
   topbarShowProfile: true,
   topbarShowMemory: true,
@@ -1064,18 +1091,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
   setupWalkthroughHidden: false,
   leftSidebarVisible: true,
   rightSidebarVisible: true,
-  leftSidebarWidth: 286,
-  rightSidebarWidth: 300,
+  leftSidebarWidth: 380,
+  rightSidebarWidth: 420,
   notifyOnLimitReset: true,
-  dictationEnabled: false,
-  dictationMode: 'toggle',
-  dictationModelId: 'parakeet-tdt-0.6b-v3-int8',
-  dictationProvider: 'local',
-  dictationCloudModel: 'openai/gpt-audio-mini',
-  dictationMicrophoneId: null,
-  dictationMicrophoneLabel: null,
-  voiceCommandApiKey: '',
-  voiceKeepListening: false,
   spawnConcurrency: 3,
   resourcePolicy: {
     mode: 'manual',
@@ -1092,6 +1110,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   workerRuleSets: null,
   shellPath: null,
   terminalFontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
+  claudeFullscreen: false,
   pomodoroWorkMinutes: 25,
   pomodoroShortBreakMinutes: 5,
   pomodoroLongBreakMinutes: 15,
@@ -1263,6 +1282,39 @@ export type McpAgentSnapshot = {
   scope: McpScope
   sources: McpSourceState[]
   servers: McpServerRecord[]
+}
+
+export type ToolingEnvKey = {
+  key: string
+  passthroughFrom: string | null
+}
+
+export type ToolingMcpTransport =
+  | { kind: 'stdio'; command: string; args: string[]; cwd: string | null }
+  | { kind: 'http'; url: string; headers: ToolingEnvKey[] }
+  | { kind: 'sse'; url: string; headers: ToolingEnvKey[] }
+
+export type ToolingMcpServer = {
+  agent: McpAgent
+  sourceKind: McpSourceKind
+  name: string
+  transport: ToolingMcpTransport
+  env: ToolingEnvKey[]
+  enabled: boolean
+  timeouts: McpTimeouts
+  bearerTokenEnvVar: string | null
+}
+
+export type ToolingSkill = {
+  agent: string
+  name: string
+  bundled: boolean
+}
+
+export type ToolingManifest = {
+  capturedAt: number
+  mcpServers: ToolingMcpServer[]
+  skills: ToolingSkill[]
 }
 
 export type McpCapability = {

@@ -20,13 +20,12 @@ import { useRef } from 'react'
 
 import { useOnClickOutside } from '../../hooks/useOnClickOutside'
 import { useOnEscape } from '../../hooks/useOnEscape'
+import { announceBackup, exportProfileState, importProfileState } from '../../lib/backup'
 import { pickFile, saveFile } from '../../lib/dialog'
 import { AGENT_SANDBOX_ENABLED } from '../../lib/featureFlags'
 import { useT } from '../../lib/i18n'
 import {
-  exportBackup,
   exportLogs,
-  importBackup,
   killPty,
   openDataFolder,
   openLogsFolder,
@@ -230,7 +229,7 @@ export function MainMenu() {
               defaultPath: `alethe-backup-${new Date().toISOString().slice(0, 10)}.alethe.zip`,
               filters: [{ name: t('menu.backupFilter'), extensions: ['zip'] }],
             })
-            if (target) await exportBackup(target)
+            if (target) announceBackup(await exportProfileState(target))
           })
         }
       >
@@ -256,7 +255,7 @@ export function MainMenu() {
             )
             await Promise.allSettled([...currentPtyIds].map((ptyId) => killPty(ptyId)))
             resetTerminalRuntime()
-            await importBackup(source)
+            await importProfileState(source)
             await hydrate()
             window.location.reload()
           })

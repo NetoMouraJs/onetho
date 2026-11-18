@@ -10,7 +10,7 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
 
 ## [0.1.0] - 2026-10-19
 
-Upstream base: Alethe 1.7.0 plus upstream `main` up to `e684e72` (`v1.7.0-259-ge684e72`).
+Upstream base: Alethe 1.7.0 plus upstream `main` up to `0acefe8` (`v1.7.0-403-g0acefe82`).
 
 ### Added
 
@@ -33,6 +33,10 @@ Upstream base: Alethe 1.7.0 plus upstream `main` up to `e684e72` (`v1.7.0-259-ge
 
 ### Changed
 
+- Synced with upstream Alethe `v1.7.0-403-g0acefe82`; what changed there is in
+  [`docs/CHANGELOG.md`](../CHANGELOG.md). Preferences → About names the fork author, with a link to
+  their GitHub profile, and hides the older-version installer, which would install upstream Alethe
+  builds over Onetho.
 - Show Onetho, not Alethe, in the text hard-coded outside the translations: the orchestration
   window title, Remote Control errors, the Spotify sign-in page, the Agent Sandbox thread title and
   the cloud sync gist description. Repositories cloned in the app go to `~/Onetho/<repo>` by default.
