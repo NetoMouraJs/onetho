@@ -64,8 +64,13 @@ Whenever there is something to try in an installed build:
 4. Install it and check the issues it was cut for; close the ones that work.
 
 From an installed build back to its source: the version in Preferences → About gives the tag, and
-the tag gives the commit. From an issue forward: the commits in its timeline; on GitHub, a commit's
-page lists the tags that contain it.
+the tag gives the commit. From an issue forward: use the landed commit in its timeline to find the
+**first RC tag that contains it**. This is the RC where the change was first included, regardless of
+which RC was planned. Check candidates in order with
+`git merge-base --is-ancestor <landed-commit> vX.Y.Z-rcNN` (exit code 0 means included). Once the
+tag exists, add a comment to the issue such as `First included in v0.1.0-rc03 (commit <sha>)` and
+keep its milestone set to the final version, `0.1.0`. Before any RC includes the commit, leave the
+actual RC unrecorded; a planned RC is not evidence of inclusion.
 
 ## 4. Release the final version
 
