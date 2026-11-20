@@ -38,6 +38,11 @@ describe('whether the panel offers to install', () => {
     expect(offerInstall(status({ installed: true }))).toBe(false)
   })
 
+  it('does not offer while another server answers on the port', () => {
+    // An external copy without a binary on PATH; a second install would split the memory.
+    expect(offerInstall(status({ running: true }))).toBe(false)
+  })
+
   it('offers nothing while the status is unknown', () => {
     expect(offerInstall(null)).toBe(false)
   })

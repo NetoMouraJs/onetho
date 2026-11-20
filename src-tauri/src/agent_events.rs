@@ -828,6 +828,9 @@ fn write_codex_hook_forwarder(port: u16) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+/// The in-repo Codex config the planner blocks live in, as an `info/exclude` pattern.
+pub(crate) const CODEX_PROJECT_CONFIG: &str = "/.codex/config.toml";
+
 const CODEX_MCP_MARK_START: &str = "# alethe-managed-mcp-start";
 const CODEX_MCP_MARK_END: &str = "# alethe-managed-mcp-end";
 
@@ -900,6 +903,8 @@ fn codex_mcp_config_write_inner(repo: String, _planner_id: String) -> Result<(),
         "\n{CODEX_MCP_MARK_START}\n[mcp_servers.alethe]\ncommand = \"powershell.exe\"\nargs = [\"-NoProfile\", \"-ExecutionPolicy\", \"Bypass\", \"-File\", {script_toml}]\n{CODEX_MCP_MARK_END}\n",
     ));
 
+    // Best effort: the file is Alethe's, so it stays out of the repository's status.
+    let _ = crate::orchestrator_core::exclude_locally(&root, CODEX_PROJECT_CONFIG);
     std::fs::write(&path, body).map_err(|e| format!("write_failed:{e}"))
 }
 
@@ -1074,6 +1079,7 @@ fn codex_hooks_config_write_inner(repo: String, _planner_id: String) -> Result<(
     block.push_str(&format!("{CODEX_HOOKS_MARK_END}\n"));
     body.push_str(&block);
 
+    let _ = crate::orchestrator_core::exclude_locally(&root, CODEX_PROJECT_CONFIG);
     std::fs::write(&path, body).map_err(|e| format!("write_failed:{e}"))
 }
 

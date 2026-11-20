@@ -57,9 +57,7 @@ import {
 } from '../../lib/sessionResume'
 import { acquireSpawnSlot, releaseSpawnSlot } from '../../lib/spawnQueue'
 import {
-  aiMemoryCodexConfigWrite,
-  aiMemoryDetect,
-  aiMemoryOpenCodeConfigWrite,
+  aiMemoryProjectConfigCleanup,
   attachPty,
   claudeSessionExists,
   clearPtyScrollback,
@@ -1428,23 +1426,10 @@ export function useXtermSession(params: {
           if (disposed) return
         }
 
-        const aiMemoryEnabled = useProjectsStore.getState().preferences.enabledFeatures.aiMemory
-        if (
-          aiMemoryEnabled &&
-          cwd &&
-          !wslTarget &&
-          (command === 'codex' || command === 'opencode')
-        ) {
-          const status = await aiMemoryDetect().catch(() => undefined)
-          if (status?.installed) {
-            if (command === 'opencode') {
-              await aiMemoryOpenCodeConfigWrite(cwd).catch(() => {})
-            } else {
-              await aiMemoryCodexConfigWrite(cwd).catch(() => {})
-            }
-          } else {
-            warnAiMemoryMissing()
-          }
+        // Codex and OpenCode take ai-memory from the user's global config; an in-repo entry would
+        // override it. Clear the ones earlier versions wrote, whatever the feature toggle says.
+        if (cwd && !wslTarget && (command === 'codex' || command === 'opencode')) {
+          await aiMemoryProjectConfigCleanup(cwd).catch(() => {})
           if (disposed) return
         }
 

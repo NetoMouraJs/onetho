@@ -318,6 +318,8 @@ pub(crate) fn graphify_opencode_config_write_inner(
     }
 
     let body = serde_json::to_string_pretty(&Value::Object(config)).map_err(|e| e.to_string())?;
+    // Best effort, as for Codex: keep Alethe's file out of the repository's status.
+    let _ = crate::orchestrator_core::exclude_locally(&root, "/opencode.json");
     std::fs::write(&path, body).map_err(|e| format!("write_failed:{e}"))
 }
 
@@ -373,6 +375,11 @@ fn graphify_codex_config_write_inner(repo: String, command: Option<String>) -> R
         "\n[mcp_servers.graphify]\ncommand = \"{cmd_toml}\"\nargs = [{args_toml}]\n",
     ));
 
+    // Best effort: the file is Alethe's, so it stays out of the repository's status.
+    let _ = crate::orchestrator_core::exclude_locally(
+        &root,
+        crate::agent_events::CODEX_PROJECT_CONFIG,
+    );
     std::fs::write(&path, body).map_err(|e| format!("write_failed:{e}"))
 }
 

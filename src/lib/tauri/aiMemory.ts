@@ -24,12 +24,9 @@ export async function aiMemoryMcpConfigPath(repo: string): Promise<string> {
   return invoke<string>('ai_memory_mcp_config_path', { repo })
 }
 
-export async function aiMemoryOpenCodeConfigWrite(repo: string): Promise<void> {
-  await invoke('ai_memory_opencode_config_write', { repo })
-}
-
-export async function aiMemoryCodexConfigWrite(repo: string): Promise<void> {
-  await invoke('ai_memory_codex_config_write', { repo })
+/** Removes the ai-memory entries earlier versions wrote into the repo's Codex/OpenCode config. */
+export async function aiMemoryProjectConfigCleanup(repo: string): Promise<void> {
+  await invoke('ai_memory_project_config_cleanup', { repo })
 }
 
 export type AiMemoryCounts = { sessions: number; observations: number; pages: number }

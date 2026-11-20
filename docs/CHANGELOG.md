@@ -469,6 +469,13 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
 
 ### Changed
 
+- **ai-memory for orchestrator workers.** Workers no longer read or leave the handoff meant for your
+  next session, and reviewer/QA workers start without ai-memory recall (no MCP, nothing injected at
+  start); capture still records them, tagged with their role and job label. Needs an ai-memory build
+  that understands the worker variables; older builds ignore them.
+- **Your own ai-memory comes first.** A copy you installed yourself is used before the one
+  Preferences installs, and Install is not offered while another ai-memory server already answers.
+
 - **ai-memory 3.x.** Preferences installs ai-memory 3.1.1. Agents use its token-aware stdio bridge
   on 3.x and retain HTTP on 2.x. Version detection times out after three seconds.
 
@@ -610,6 +617,11 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
 
 ### Fixed
 
+- **Codex and OpenCode keep your global ai-memory.** Opening them in a terminal no longer writes an
+  ai-memory entry into the repository's `.codex/config.toml` or `opencode.json`, where it overrode
+  your global setup and failed under Codex. Entries earlier versions wrote are removed when untouched.
+- **Alethe files stay out of `git status`.** Agent worktrees (`.alethe/`) and the Codex/OpenCode
+  config files Alethe writes into a repository are added to its local `.git/info/exclude`.
 - ai-memory installs accept Unix archives with a root directory entry, find manually installed
   binaries outside the app PATH, and avoid duplicating Claude Code capture hooks already configured.
 - **Light terminal contrast.** Light themes, including plugin themes, enforce a WCAG-AA contrast

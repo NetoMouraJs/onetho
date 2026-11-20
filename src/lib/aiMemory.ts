@@ -14,7 +14,8 @@ export const AI_MEMORY_DEFAULT_PORT = 49374
 export const AI_MEMORY_REPO = 'https://github.com/akitaonrails/ai-memory'
 
 export function offerInstall(status: AiMemoryStatus | null): boolean {
-  return Boolean(status && !status.installed && status.supported)
+  // A server already answering is someone else's copy: installing another would split the memory.
+  return Boolean(status && !status.installed && !status.running && status.supported)
 }
 
 export function canStart(status: AiMemoryStatus | null): boolean {
