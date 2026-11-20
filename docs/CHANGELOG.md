@@ -614,6 +614,10 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
 
 - **Agent hooks.** Hook endpoints accept only POST requests to exact routes, hook payloads stay
   out of logs, and temporary Claude hook settings are removed on exit.
+- **Codex planner scripts.** The hook forwarder and MCP bridge Codex terminals use move from the temp
+  folder to the app's local data folder and no longer contain the orchestrator token; they read it at
+  run time, so a bridge also survives an app restart. Old copies in the temp folder are deleted.
+  Codex asks once to trust the updated hooks.
 
 ### Fixed
 

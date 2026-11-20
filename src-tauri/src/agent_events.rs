@@ -785,10 +785,6 @@ fn install_tag() -> &'static str {
     })
 }
 
-fn ps_escape(value: &str) -> String {
-    value.replace('\'', "''")
-}
-
 fn toml_string(value: &str) -> String {
     toml_edit::Value::from(value).to_string()
 }
@@ -799,33 +795,61 @@ fn toml_string(value: &str) -> String {
 /// whenever it changes, so the endpoint lives inside the script and the terminal identifies itself
 /// through ALETHE_PLANNER at run time. A failed delivery still exits 0: the hooks stay in the
 /// repo's config, and Codex would report a hook error for every subagent while the app is closed.
-fn write_codex_hook_forwarder(port: u16) -> Result<PathBuf, String> {
-    let endpoint = listener_endpoint(port);
-    let token = init_token();
-    let script = format!(
-        "$body = [Console]::In.ReadToEnd()\r\n\
+///
+/// The script lives in the app's local data folder, not the temp folder, and holds neither the
+/// token nor the endpoint: it reads both from `listener.json` beside it on every run (#50).
+fn write_codex_hook_forwarder(dir: &Path, port: u16) -> Result<PathBuf, String> {
+    write_codex_listener_file(dir, port)?;
+    let script = "try {\r\n\
+         \x20\x20$listener = Get-Content -Raw -ErrorAction Stop -LiteralPath (Join-Path $PSScriptRoot 'listener.json') | ConvertFrom-Json\r\n\
+         } catch {\r\n\
+         \x20\x20[Console]::Error.WriteLine('[alethe-hook] Alethe is not running: ' + $_.Exception.Message)\r\n\
+         \x20\x20exit 0\r\n\
+         }\r\n\
+         $body = [Console]::In.ReadToEnd()\r\n\
          $planner = $env:ALETHE_PLANNER\r\n\
-         $uri = '{endpoint}/hook'\r\n\
-         $headers = @{{ 'X-Alethe-Token' = '{token}'; 'X-Alethe-Planner' = $planner; 'X-Alethe-Agent' = 'codex' }}\r\n\
-         for ($attempt = 0; $attempt -lt 3; $attempt++) {{\r\n\
-         \x20\x20try {{\r\n\
+         $uri = $listener.endpoint + '/hook'\r\n\
+         $headers = @{ 'X-Alethe-Token' = $listener.token; 'X-Alethe-Planner' = $planner; 'X-Alethe-Agent' = 'codex' }\r\n\
+         for ($attempt = 0; $attempt -lt 3; $attempt++) {\r\n\
+         \x20\x20try {\r\n\
          \x20\x20\x20\x20Invoke-RestMethod -Uri $uri -Method Post -Body $body -ContentType 'application/json' -Headers $headers | Out-Null\r\n\
          \x20\x20\x20\x20exit 0\r\n\
-         \x20\x20}} catch {{\r\n\
-         \x20\x20\x20\x20if ($attempt -eq 2) {{\r\n\
+         \x20\x20} catch {\r\n\
+         \x20\x20\x20\x20if ($attempt -eq 2) {\r\n\
          \x20\x20\x20\x20\x20\x20[Console]::Error.WriteLine('[alethe-hook] request failed: ' + $_.Exception.Message)\r\n\
          \x20\x20\x20\x20\x20\x20exit 0\r\n\
-         \x20\x20\x20\x20}}\r\n\
+         \x20\x20\x20\x20}\r\n\
          \x20\x20\x20\x20Start-Sleep -Milliseconds 200\r\n\
-         \x20\x20}}\r\n\
-         }}\r\n",
-        endpoint = endpoint,
-        token = ps_escape(token),
-    );
-    let path =
-        std::env::temp_dir().join(format!("alethe-codex-hook-forward-{}.ps1", install_tag()));
+         \x20\x20}\r\n\
+         }\r\n";
+    let name = format!("{CODEX_HOOK_FORWARDER}{}.ps1", install_tag());
+    let path = dir.join(&name);
     std::fs::write(&path, script).map_err(|e| format!("write_failed:{e}"))?;
+    // Copies earlier versions left in the temp folder still carry a token.
+    let _ = std::fs::remove_file(std::env::temp_dir().join(name));
     Ok(path)
+}
+
+/// Where the Codex forwarder and bridge live: the app's local data folder (one per install, so dev
+/// and prod stay apart), never the temp folder, which cleaners empty under a live config.
+fn codex_scripts_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| error.to_string())?
+        .join("codex");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir_failed:{e}"))?;
+    Ok(dir)
+}
+
+/// The endpoint and token of this run, read by the Codex scripts at run time. Written whole through
+/// a temporary file, so a script never reads half of it.
+fn write_codex_listener_file(dir: &Path, port: u16) -> Result<(), String> {
+    let body = serde_json::json!({ "endpoint": listener_endpoint(port), "token": init_token() });
+    let path = dir.join("listener.json");
+    let tmp = dir.join("listener.json.tmp");
+    std::fs::write(&tmp, body.to_string()).map_err(|e| format!("write_failed:{e}"))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("write_failed:{e}"))
 }
 
 /// The in-repo Codex config the planner blocks live in, as an `info/exclude` pattern.
@@ -836,35 +860,42 @@ const CODEX_MCP_MARK_END: &str = "# alethe-managed-mcp-end";
 
 /// Codex's MCP client only declares servers via `command`/`args` (stdio), unlike Claude Code's
 /// remote `http` support — this script bridges stdin/stdout JSON-RPC to Alethe's `/mcp` endpoint.
-fn write_codex_mcp_bridge(port: u16) -> Result<PathBuf, String> {
-    let endpoint = listener_endpoint(port);
-    let token = init_token();
-    let script = format!(
-        "$planner = $env:ALETHE_PLANNER\r\n\
-         while ($line = [Console]::In.ReadLine()) {{\r\n\
-         \x20\x20if ([string]::IsNullOrWhiteSpace($line)) {{ continue }}\r\n\
-         \x20\x20try {{\r\n\
-         \x20\x20\x20\x20$resp = Invoke-WebRequest -UseBasicParsing -ErrorAction Stop -Uri '{endpoint}/mcp' -Method Post -Body $line -ContentType 'application/json' -Headers @{{ 'X-Alethe-Token' = '{token}'; 'X-Alethe-Planner' = $planner }}\r\n\
-         \x20\x20\x20\x20if ($resp.Content) {{\r\n\
+/// Like the forwarder, it reads the endpoint and token from `listener.json` on every request, so a
+/// bridge that outlives an app restart picks up the new run instead of failing with a stale token.
+fn write_codex_mcp_bridge(dir: &Path, port: u16) -> Result<PathBuf, String> {
+    write_codex_listener_file(dir, port)?;
+    let script = "$planner = $env:ALETHE_PLANNER\r\n\
+         $listenerFile = Join-Path $PSScriptRoot 'listener.json'\r\n\
+         while ($line = [Console]::In.ReadLine()) {\r\n\
+         \x20\x20if ([string]::IsNullOrWhiteSpace($line)) { continue }\r\n\
+         \x20\x20try {\r\n\
+         \x20\x20\x20\x20$listener = Get-Content -Raw -ErrorAction Stop -LiteralPath $listenerFile | ConvertFrom-Json\r\n\
+         \x20\x20\x20\x20$resp = Invoke-WebRequest -UseBasicParsing -ErrorAction Stop -Uri ($listener.endpoint + '/mcp') -Method Post -Body $line -ContentType 'application/json' -Headers @{ 'X-Alethe-Token' = $listener.token; 'X-Alethe-Planner' = $planner }\r\n\
+         \x20\x20\x20\x20if ($resp.Content) {\r\n\
          \x20\x20\x20\x20\x20\x20[Console]::Out.WriteLine($resp.Content)\r\n\
          \x20\x20\x20\x20\x20\x20[Console]::Out.Flush()\r\n\
-         \x20\x20\x20\x20}}\r\n\
-         \x20\x20}} catch {{\r\n\
+         \x20\x20\x20\x20}\r\n\
+         \x20\x20} catch {\r\n\
          \x20\x20\x20\x20[Console]::Error.WriteLine('[alethe-mcp] request failed: ' + $_.Exception.Message)\r\n\
-         \x20\x20}}\r\n\
-         }}\r\n",
-        endpoint = endpoint,
-        token = ps_escape(token),
-    );
-    let path = std::env::temp_dir().join(format!("alethe-codex-mcp-bridge-{}.ps1", install_tag()));
+         \x20\x20}\r\n\
+         }\r\n";
+    let name = format!("{CODEX_MCP_BRIDGE}{}.ps1", install_tag());
+    let path = dir.join(&name);
     std::fs::write(&path, script).map_err(|e| format!("write_failed:{e}"))?;
+    let _ = std::fs::remove_file(std::env::temp_dir().join(name));
     Ok(path)
 }
 
-fn codex_mcp_config_write_inner(repo: String, _planner_id: String) -> Result<(), String> {
+const CODEX_MCP_BRIDGE: &str = "alethe-codex-mcp-bridge-";
+
+fn codex_mcp_config_write_inner(
+    dir: &Path,
+    repo: String,
+    _planner_id: String,
+) -> Result<(), String> {
     let port = wait_for_listener_port()
         .ok_or_else(|| "the agent listener is not available yet".to_string())?;
-    let script_path = write_codex_mcp_bridge(port)?;
+    let script_path = write_codex_mcp_bridge(dir, port)?;
 
     let root = crate::git_control::repository_root(&repo)?;
     let codex_dir = root.join(".codex");
@@ -927,7 +958,8 @@ pub async fn codex_mcp_config_write(
             label: planner_label,
             agent: planner_agent,
         });
-    tokio::task::spawn_blocking(move || codex_mcp_config_write_inner(repo, planner_id))
+    let dir = codex_scripts_dir(&app)?;
+    tokio::task::spawn_blocking(move || codex_mcp_config_write_inner(&dir, repo, planner_id))
         .await
         .map_err(|error| format!("codex_mcp_config_write: falha na task bloqueante: {error}"))?
 }
@@ -1028,10 +1060,14 @@ fn strip_legacy_codex_hooks(body: &str) -> String {
     output
 }
 
-fn codex_hooks_config_write_inner(repo: String, _planner_id: String) -> Result<(), String> {
+fn codex_hooks_config_write_inner(
+    dir: &Path,
+    repo: String,
+    _planner_id: String,
+) -> Result<(), String> {
     let port = wait_for_listener_port()
         .ok_or_else(|| "the agent listener is not available yet".to_string())?;
-    let script_path = write_codex_hook_forwarder(port)?;
+    let script_path = write_codex_hook_forwarder(dir, port)?;
 
     let root = crate::git_control::repository_root(&repo)?;
     let codex_dir = root.join(".codex");
@@ -1087,8 +1123,13 @@ fn codex_hooks_config_write_inner(repo: String, _planner_id: String) -> Result<(
 /// Codex terminal's own subagents back to Alethe, tagged with `planner_id` so the orchestrator
 /// canvas can hang them off the terminal that spawned them.
 #[tauri::command]
-pub async fn codex_hooks_config_write(repo: String, planner_id: String) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || codex_hooks_config_write_inner(repo, planner_id))
+pub async fn codex_hooks_config_write(
+    app: tauri::AppHandle,
+    repo: String,
+    planner_id: String,
+) -> Result<(), String> {
+    let dir = codex_scripts_dir(&app)?;
+    tokio::task::spawn_blocking(move || codex_hooks_config_write_inner(&dir, repo, planner_id))
         .await
         .map_err(|error| format!("codex_hooks_config_write: falha na task bloqueante: {error}"))?
 }
@@ -1688,11 +1729,41 @@ mod tests {
         assert_eq!(document["path"].as_str(), Some(path));
     }
 
+    /// A private folder per test, standing in for the app's local data folder.
+    fn scripts_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("alethe-codex-scripts-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn codex_scripts_carry_neither_the_token_nor_the_endpoint() {
+        let dir = scripts_dir("token");
+        let forwarder = super::write_codex_hook_forwarder(&dir, 8125).unwrap();
+        let bridge = super::write_codex_mcp_bridge(&dir, 8125).unwrap();
+        let token = super::init_token();
+        for path in [&forwarder, &bridge] {
+            let script = std::fs::read_to_string(path).unwrap();
+            assert!(!script.contains(token), "{}", path.display());
+            assert!(!script.contains("8125"), "{}", path.display());
+            assert!(script.contains("listener.json"), "{}", path.display());
+            assert!(path.starts_with(&dir), "{}", path.display());
+        }
+        let listener: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("listener.json")).unwrap()).unwrap();
+        assert_eq!(listener["token"], token);
+        assert_eq!(listener["endpoint"], "http://127.0.0.1:8125");
+        assert!(!dir.join("listener.json.tmp").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn codex_hook_forwarder_retries_and_reports_failures() {
-        let path = super::write_codex_hook_forwarder(8124).expect("hook forwarder should be written");
+        let dir = scripts_dir("forwarder");
+        let path = super::write_codex_hook_forwarder(&dir, 8124).expect("hook forwarder should be written");
         let script = std::fs::read_to_string(&path).expect("hook forwarder should be readable");
         let removed = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(&dir);
 
         assert!(
             !script.contains("catch {}"),
@@ -1715,11 +1786,12 @@ mod tests {
 
     #[test]
     fn codex_mcp_bridge_script_requests_with_basic_parsing() {
-        // The file name comes from the test binary's own path, so this never touches the bridge
-        // a running app uses.
-        let path = super::write_codex_mcp_bridge(8123).expect("bridge script should be written");
+        // A folder of its own, so this never touches the bridge a running app uses.
+        let dir = scripts_dir("bridge");
+        let path = super::write_codex_mcp_bridge(&dir, 8123).expect("bridge script should be written");
         let script = std::fs::read_to_string(&path).expect("bridge script should be readable");
         let removed = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(&dir);
 
         assert!(
             script.contains("Invoke-WebRequest -UseBasicParsing -ErrorAction Stop -Uri"),
