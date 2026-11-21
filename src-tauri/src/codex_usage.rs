@@ -373,6 +373,25 @@ async fn fetch_usage_http() -> Result<CodexUsage, String> {
     }
 }
 
+fn retry_after_secs(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<u64>().ok())
+}
+
+fn wham_api_error(status: reqwest::StatusCode, retry_after: Option<u64>) -> String {
+    match retry_after {
+        Some(secs) => format!("API returned {}; retry-after={secs}", status),
+        None => format!("API returned {}", status),
+    }
+}
+
+/// True when the HTTP read hit a rate limit and must not fall back to `codex app-server`.
+fn is_http_rate_limited(err: &str) -> bool {
+    err.starts_with("API returned 429")
+}
+
 async fn wham_get(url: &str, token: &str, account_id: Option<&str>) -> Result<Value, String> {
     let mut request = http_client()
         .get(url)
@@ -387,7 +406,10 @@ async fn wham_get(url: &str, token: &str, account_id: Option<&str>) -> Result<Va
         .await
         .map_err(|e| format!("request failed: {e}"))?;
     if !resp.status().is_success() {
-        return Err(format!("API returned {}", resp.status()));
+        return Err(wham_api_error(
+            resp.status(),
+            retry_after_secs(resp.headers()),
+        ));
     }
     resp.json().await.map_err(|e| format!("json parse: {e}"))
 }
@@ -514,6 +536,7 @@ pub async fn get_codex_usage() -> Result<CodexUsage, String> {
     // HTTP first: spawning codex.exe on every poll can crash lsass.exe on Windows (#202).
     match fetch_usage_http().await {
         Ok(usage) => return Ok(usage),
+        Err(e) if is_http_rate_limited(&e) => return Err(e),
         Err(e) => eprintln!("[codex_usage] http read failed, using app-server: {e}"),
     }
     tokio::task::spawn_blocking(fetch_usage_app_server)
@@ -761,6 +784,22 @@ mod tests {
         let found = super::rollout_usage(&path).expect("reading");
         assert_eq!(found.usage.primary.used_percent, 20.0);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn wham_rate_limit_error_includes_retry_after() {
+        let err = super::wham_api_error(reqwest::StatusCode::TOO_MANY_REQUESTS, Some(30));
+        assert_eq!(err, "API returned 429 Too Many Requests; retry-after=30");
+        assert!(super::is_http_rate_limited(&err));
+    }
+
+    #[test]
+    fn wham_rate_limit_without_retry_after_skips_app_server_fallback() {
+        let err = super::wham_api_error(reqwest::StatusCode::TOO_MANY_REQUESTS, None);
+        assert_eq!(err, "API returned 429 Too Many Requests");
+        assert!(super::is_http_rate_limited(&err));
+        assert!(!super::is_http_rate_limited("API returned 401 Unauthorized"));
+        assert!(!super::is_http_rate_limited("request failed: connection refused"));
     }
 
     #[test]
