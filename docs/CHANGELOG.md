@@ -475,6 +475,10 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
   that understands the worker variables; older builds ignore them.
 - **Your own ai-memory comes first.** A copy you installed yourself is used before the one
   Preferences installs, and Install is not offered while another ai-memory server already answers.
+- **Which ai-memory you run.** Preferences → AI Memory shows the installed version and whether it is
+  the OwnerCode build or upstream, lists what the build does for orchestrator workers (read from
+  `ai-memory capabilities --json`), links to that build's repository, and warns when the build cannot
+  protect your handoff from workers.
 
 - **ai-memory 3.x.** Preferences installs ai-memory 3.1.1. Agents use its token-aware stdio bridge
   on 3.x and retain HTTP on 2.x. Version detection times out after three seconds.
@@ -617,9 +621,11 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
 
 ### Fixed
 
-- **Codex and OpenCode keep your global ai-memory.** Opening them in a terminal no longer writes an
-  ai-memory entry into the repository's `.codex/config.toml` or `opencode.json`, where it overrode
-  your global setup and failed under Codex. Entries earlier versions wrote are removed when untouched.
+- **Codex and OpenCode keep your global ai-memory.** When ai-memory is in your global Codex or
+  OpenCode config, Alethe leaves it alone instead of writing an in-repo entry that overrode it (and
+  failed under Codex). Without one, Codex gets ai-memory as launch overrides, with nothing written to
+  the repository, and OpenCode in the repo's `opencode.json`, kept out of `git status`; both now use
+  the bridge form a non-Claude client needs. Untouched entries earlier versions wrote are removed.
 - **Alethe files stay out of `git status`.** Agent worktrees (`.alethe/`) and the Codex/OpenCode
   config files Alethe writes into a repository are added to its local `.git/info/exclude`.
 - ai-memory installs accept Unix archives with a root directory entry, find manually installed

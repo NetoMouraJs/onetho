@@ -712,6 +712,7 @@ pub fn run() {
             ai_memory::ai_memory_detect,
             ai_memory::ai_memory_mcp_config_path,
             ai_memory::ai_memory_project_config_cleanup,
+            ai_memory::ai_memory_terminal_setup,
             router9_remote::router9_remote_key_status,
             router9_remote::router9_set_remote_key,
             ai_memory::ai_memory_install,

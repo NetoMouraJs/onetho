@@ -727,6 +727,14 @@ export const en = {
   'aiMemory.stopped': 'Not running',
   'aiMemory.portBusy':
     'Something already answers on {endpoint} and Alethe did not start it — most likely your own copy. Alethe will leave it alone.',
+  'aiMemory.buildOwnerCode': 'OwnerCode build',
+  'aiMemory.buildUpstream': 'Upstream build',
+  'aiMemory.flagsLabel': 'What this build does for orchestrator workers',
+  'aiMemory.flag.handoff': 'Workers keep your handoff',
+  'aiMemory.flag.reviewers': 'Reviewers start without memory',
+  'aiMemory.flag.sessions': 'Worker sessions tagged with role and job',
+  'aiMemory.noWorkerContract':
+    'This ai-memory build does not support orchestrator workers: a worker can take the handoff left for your next session, and reviewer workers still receive memory when they start.',
   'aiMemory.counts': '{pages} pages · {sessions} sessions · {observations} observations',
   'aiMemory.installError': 'ai-memory could not be installed.',
   'aiMemory.startError': 'ai-memory could not be started.',

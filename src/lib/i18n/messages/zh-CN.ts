@@ -3457,6 +3457,14 @@ export const zhCN: Record<MessageKey, string> = {
   'aiMemory.stopped': '未运行',
   'aiMemory.portBusy':
     '{endpoint} 上已有其他程序在响应，且不是 Alethe 启动的 —— 很可能是你自己的副本。Alethe 不会干预它。',
+  'aiMemory.buildOwnerCode': 'OwnerCode 版本',
+  'aiMemory.buildUpstream': '上游版本',
+  'aiMemory.flagsLabel': '此版本为编排器 worker 提供的功能',
+  'aiMemory.flag.handoff': 'worker 保留你的交接',
+  'aiMemory.flag.reviewers': '评审 worker 启动时不带记忆',
+  'aiMemory.flag.sessions': 'worker 会话标注角色和任务',
+  'aiMemory.noWorkerContract':
+    '此 ai-memory 版本不支持编排器 worker：worker 可能会取走留给你下一次会话的交接，评审 worker 启动时仍会收到记忆。',
   'aiMemory.counts': '{pages} 个页面 · {sessions} 个会话 · {observations} 条观察',
   'aiMemory.installError': '无法安装 ai-memory。',
   'aiMemory.startError': '无法启动 ai-memory。',

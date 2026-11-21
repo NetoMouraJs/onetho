@@ -2,15 +2,17 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   AI_MEMORY_DEFAULT_PORT,
-  AI_MEMORY_REPO,
   type AiMemoryCounts,
   aiMemoryCounts,
   aiMemoryErrorMessage,
   aiMemoryInstall,
+  aiMemoryRepoFor,
   aiMemoryStart,
   type AiMemoryStatus,
   aiMemoryStop,
+  aiMemoryWorkerFlags,
   canStart,
+  isOwnerCodeBuild,
   offerInstall,
   portOwnedByOther,
 } from '../../../lib/aiMemory'
@@ -89,9 +91,21 @@ export function AiMemoryPanel() {
     }
   }
 
+  const ownerCode = isOwnerCodeBuild(status)
+  const workerFlags = aiMemoryWorkerFlags(status)
+
   return (
     <div className={styles.panel}>
       <p className={styles.captures}>{t('aiMemory.panelCaptures')}</p>
+
+      {status?.installed ? (
+        <div className={styles.identity}>
+          {status.version ? <span className={styles.version}>{status.version}</span> : null}
+          <span className={ownerCode ? `${styles.badge} ${styles.badgeOwn}` : styles.badge}>
+            {t(ownerCode ? 'aiMemory.buildOwnerCode' : 'aiMemory.buildUpstream')}
+          </span>
+        </div>
+      ) : null}
 
       <p className={styles.state}>
         {status === null
@@ -102,6 +116,22 @@ export function AiMemoryPanel() {
               ? t('aiMemory.unsupported')
               : t('aiMemory.missing')}
       </p>
+
+      {workerFlags.length > 0 ? (
+        <ul className={styles.flags} aria-label={t('aiMemory.flagsLabel')}>
+          {workerFlags.map((flag) => (
+            <li key={flag} className={styles.flag}>
+              {t(
+                flag === 'handoff'
+                  ? 'aiMemory.flag.handoff'
+                  : flag === 'reviewers'
+                    ? 'aiMemory.flag.reviewers'
+                    : 'aiMemory.flag.sessions',
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       {status?.installed ? (
         <p className={styles.state}>
@@ -122,6 +152,10 @@ export function AiMemoryPanel() {
         <p className={styles.warning}>
           {t('aiMemory.portBusy', { endpoint: status?.endpoint ?? '' })}
         </p>
+      ) : null}
+
+      {status?.installed && !status.capabilities.workerContract ? (
+        <p className={styles.warning}>{t('aiMemory.noWorkerContract')}</p>
       ) : null}
 
       <div className={styles.actions}>
@@ -156,7 +190,7 @@ export function AiMemoryPanel() {
             {busy === 'start' ? t('aiMemory.starting') : t('aiMemory.start')}
           </button>
         )}
-        <a className={styles.link} href={AI_MEMORY_REPO} target="_blank" rel="noreferrer">
+        <a className={styles.link} href={aiMemoryRepoFor(status)} target="_blank" rel="noreferrer">
           {t('aiMemory.openRepo')}
         </a>
       </div>

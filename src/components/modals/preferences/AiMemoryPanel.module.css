@@ -16,6 +16,45 @@
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.version {
+  color: var(--fg);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.badge {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--fg-muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.badgeOwn {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+.flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.flag {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--fg-muted);
+  font-size: 10px;
+}
 .warning {
   max-width: 68ch;
   margin: 0;
