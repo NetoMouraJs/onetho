@@ -3,11 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { SessionTitle, SubTab } from '../lib/types'
 
-const getClaudeSessionTitleInfo = vi.fn<() => Promise<SessionTitle | null>>()
+const { getClaudeSessionTitleInfo, getCodexSessionTitleInfo } = vi.hoisted(() => ({
+  getClaudeSessionTitleInfo: vi.fn<() => Promise<SessionTitle | null>>(),
+  getCodexSessionTitleInfo: vi.fn<() => Promise<SessionTitle | null>>(),
+}))
 
 vi.mock('../lib/tauri/sessions', () => ({
-  getClaudeSessionTitleInfo: () => getClaudeSessionTitleInfo(),
-  getCodexSessionTitle: vi.fn(async () => null),
+  getClaudeSessionTitleInfo,
+  getCodexSessionTitleInfo,
 }))
 
 const { useSessionTitle } = await import('./useSidebarChatTitle')
@@ -30,6 +33,7 @@ const advance = (ms: number) =>
 beforeEach(() => {
   vi.useFakeTimers()
   getClaudeSessionTitleInfo.mockReset()
+  getCodexSessionTitleInfo.mockReset()
 })
 
 afterEach(() => {
@@ -80,5 +84,24 @@ describe('useSessionTitle', () => {
     await advance(60_000)
 
     expect(result.current).toEqual({ title: 'Late name', userNamed: true })
+  })
+
+  it('picks up a late Codex rename with userNamed set', async () => {
+    getCodexSessionTitleInfo.mockResolvedValueOnce({ title: 'Automatic', userNamed: false })
+    const tab = {
+      id: 'tab',
+      type: 'codex',
+      name: 'codex',
+      cwd: 'C:\\repo',
+      sessionId: `codex-${++sessionCounter}`,
+    } as SubTab
+    const { result } = renderHook(() => useSessionTitle(tab))
+    await advance(0)
+    expect(result.current).toEqual({ title: 'Automatic', userNamed: false })
+
+    getCodexSessionTitleInfo.mockResolvedValueOnce({ title: 'BS-20059', userNamed: true })
+    await advance(300_000)
+
+    expect(result.current).toEqual({ title: 'BS-20059', userNamed: true })
   })
 })

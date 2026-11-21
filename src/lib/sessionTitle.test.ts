@@ -93,6 +93,12 @@ describe('sanitizeSessionTitle', () => {
     expect(sanitizeSessionTitle(null)).toBeNull()
     expect(sanitizeSessionTitle(' \n\t ')).toBeNull()
   })
+
+  it('returns null for Codex AGENTS.md instruction injection', () => {
+    const injected = '# AGENTS.md instructions <INSTRUCTIONS>\nFollow the repo guide.'
+    expect(isInjectedTitle(injected)).toBe(true)
+    expect(sanitizeSessionTitle(injected)).toBeNull()
+  })
 })
 
 describe('sanitizeLeakedTabNames', () => {

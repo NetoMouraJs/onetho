@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { sanitizeSessionTitle } from '../lib/sessionTitle'
-import { getClaudeSessionTitleInfo, getCodexSessionTitle } from '../lib/tauri/sessions'
+import { getClaudeSessionTitleInfo, getCodexSessionTitleInfo } from '../lib/tauri/sessions'
 import type { SessionTitle, SubTab } from '../lib/types'
 
 const CACHE_TTL_MS = 300_000
@@ -47,9 +47,7 @@ async function loadTitle(type: 'claude' | 'codex', cwd: string, sessionId: strin
   const pending = (
     type === 'claude'
       ? getClaudeSessionTitleInfo(cwd, sessionId)
-      : getCodexSessionTitle(sessionId).then((title) =>
-          title ? { title, userNamed: false } : null,
-        )
+      : getCodexSessionTitleInfo(sessionId)
   )
     .then((value) => {
       const sanitizedTitle = sanitizeSessionTitle(value?.title)

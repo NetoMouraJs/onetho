@@ -1,7 +1,13 @@
 import type { ProjectsFile, SessionTitle, SubTab, Terminal } from './types'
 
 export function isInjectedTitle(value: string | null | undefined): boolean {
-  return value?.includes('<system-reminder>') ?? false
+  if (!value) return false
+  const trimmed = value.trim()
+  if (trimmed.includes('<system-reminder>')) return true
+  if (trimmed.includes('<INSTRUCTIONS>') || trimmed.includes('<instructions>')) return true
+  if (trimmed.includes('<environment_context>')) return true
+  if (/^#\s*AGENTS\.md\s+instructions/i.test(trimmed)) return true
+  return false
 }
 
 export function sanitizeSessionTitle(value: string | null | undefined): string | null {

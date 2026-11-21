@@ -10,6 +10,9 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
 
 ## [Unreleased]
 
+- **Codex session titles.** Pane and sidebar names follow Codex `/rename`, filter injected AGENTS.md
+  instruction text, and keep polling for late renames within the existing cache window.
+
 - **Dev diagnostics.** A local dashboard traces Claude and Codex usage refreshes and frontend failures with correlation IDs, timing and safe error categories.
 - **Dev diagnostic details.** Failed events can show a sanitized frontend stack and their full event ID.
 

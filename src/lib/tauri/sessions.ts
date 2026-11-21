@@ -99,6 +99,10 @@ export async function getCodexSessionTitle(sessionId: string): Promise<string | 
   return invoke<string | null>('get_codex_session_title', { sessionId })
 }
 
+export async function getCodexSessionTitleInfo(sessionId: string): Promise<SessionTitle | null> {
+  return invoke<SessionTitle | null>('get_codex_session_title_info', { sessionId })
+}
+
 export async function nativeSubagentCompleted(
   agent: 'claude' | 'codex',
   agentId: string,

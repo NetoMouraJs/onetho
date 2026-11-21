@@ -167,11 +167,71 @@ pub(crate) fn find_codex_session_file(session_id: &str) -> Option<PathBuf> {
     })
 }
 
-/// Only the first genuine user turn: the file also carries the framework's
-/// own injected messages (permissions/collaboration-mode/environment-context
-/// blocks), which are also `role: "user"` but wrapped in `<tag>` prose, so
-/// those are skipped in favor of the first line that isn't.
-fn codex_first_user_text(line: &str) -> Option<String> {
+const CODEX_USER_MESSAGE_PREFIX: &str = "## My request for Codex:";
+
+fn strip_codex_user_message_prefix(text: &str) -> &str {
+    match text.find(CODEX_USER_MESSAGE_PREFIX) {
+        Some(idx) => text[idx + CODEX_USER_MESSAGE_PREFIX.len()..].trim(),
+        None => text.trim(),
+    }
+}
+
+fn is_agents_md_instructions(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.starts_with("# agents.md instructions")
+        || lower.contains("agents.md instructions <instructions>")
+}
+
+/// Framework-injected user records (AGENTS.md, environment context, XML blocks).
+pub(crate) fn is_injected_codex_text(text: &str) -> bool {
+    let text = text.trim();
+    if text.is_empty() {
+        return true;
+    }
+    if text.starts_with('<') {
+        return true;
+    }
+    if text.contains("<system-reminder>") {
+        return true;
+    }
+    if text.contains("<INSTRUCTIONS>") || text.contains("<instructions>") {
+        return true;
+    }
+    if text.contains("<environment_context>") {
+        return true;
+    }
+    is_agents_md_instructions(text)
+}
+
+fn usable_title_text(text: &str) -> Option<String> {
+    let stripped = strip_codex_user_message_prefix(text);
+    if is_injected_codex_text(stripped) {
+        return None;
+    }
+    let trimmed = stripped.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
+/// Codex stores real prompts in `event_msg` user lines; `response_item` user
+/// messages are often injected framework content.
+fn codex_event_user_text(line: &str) -> Option<String> {
+    let value = serde_json::from_str::<serde_json::Value>(line).ok()?;
+    if value.get("type").and_then(|v| v.as_str()) != Some("event_msg") {
+        return None;
+    }
+    let payload = value.get("payload")?;
+    if payload.get("type").and_then(|v| v.as_str()) != Some("user_message") {
+        return None;
+    }
+    let message = payload.get("message")?.as_str()?;
+    usable_title_text(message)
+}
+
+/// Fallback when older rollouts lack `event_msg` user lines.
+fn codex_response_item_user_text(line: &str) -> Option<String> {
     let value = serde_json::from_str::<serde_json::Value>(line).ok()?;
     if value.get("type").and_then(|v| v.as_str()) != Some("response_item") {
         return None;
@@ -182,32 +242,56 @@ fn codex_first_user_text(line: &str) -> Option<String> {
     {
         return None;
     }
-    payload
-        .get("content")?
-        .as_array()?
-        .iter()
-        .find_map(|block| {
-            let text = block.get("text").and_then(|v| v.as_str())?.trim();
-            if text.is_empty() || text.starts_with('<') {
-                None
-            } else {
-                Some(text.to_string())
-            }
-        })
+    payload.get("content")?.as_array()?.iter().find_map(|block| {
+        let text = block.get("text").and_then(|v| v.as_str())?;
+        usable_title_text(text)
+    })
+}
+
+fn codex_prompt_from_line(line: &str) -> Option<String> {
+    codex_event_user_text(line).or_else(|| codex_response_item_user_text(line))
 }
 
 const MAX_TITLE_SCAN_LINES: usize = 200;
 
-fn get_codex_session_title_inner(session_id: String) -> Result<Option<String>, String> {
-    if session_id.is_empty() || session_id.contains(['/', '\\']) {
-        return Ok(None);
+struct CodexThreadTitles {
+    name: Option<String>,
+    title: Option<String>,
+    first_user_message: Option<String>,
+}
+
+fn codex_state_db_path() -> Option<PathBuf> {
+    provider_home_dir(&[".codex"]).map(|home| home.join("state_5.sqlite"))
+}
+
+fn load_codex_thread_titles(session_id: &str) -> Option<CodexThreadTitles> {
+    let path = codex_state_db_path()?;
+    if !path.is_file() {
+        return None;
     }
-    let Some(path) = find_codex_session_file(&session_id) else {
-        return Ok(None);
-    };
-    let Ok(file) = fs::File::open(&path) else {
-        return Ok(None);
-    };
+    let conn = rusqlite::Connection::open_with_flags(
+        &path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .ok()?;
+    let mut stmt = conn
+        .prepare("SELECT name, title, first_user_message FROM threads WHERE id = ?1")
+        .ok()?;
+    let mut rows = stmt.query(rusqlite::params![session_id]).ok()?;
+    let row = rows.next().ok()??;
+    let name: Option<String> = row.get(0).ok();
+    let title: Option<String> = row.get(1).ok();
+    let first_user_message: Option<String> = row.get(2).ok();
+    Some(CodexThreadTitles {
+        name,
+        title,
+        first_user_message,
+    })
+}
+
+fn scan_codex_jsonl_prompt(session_id: &str) -> Option<String> {
+    let path = find_codex_session_file(session_id)?;
+    let file = fs::File::open(&path).ok()?;
     let mut reader = BufReader::with_capacity(64 * 1024, file);
     let mut buf: Vec<u8> = Vec::with_capacity(8 * 1024);
     let mut scanned = 0usize;
@@ -222,11 +306,67 @@ fn get_codex_session_title_inner(session_id: String) -> Result<Option<String>, S
         let Ok(line) = std::str::from_utf8(&buf) else {
             continue;
         };
-        if let Some(text) = codex_first_user_text(line) {
-            return Ok(Some(truncate_chars(&text, 240)));
+        if let Some(text) = codex_prompt_from_line(line) {
+            return Some(truncate_chars(&text, 240));
         }
     }
-    Ok(None)
+    None
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexSessionTitle {
+    pub title: String,
+    pub user_named: bool,
+}
+
+pub(crate) fn resolve_codex_session_title(
+    db: Option<CodexThreadTitles>,
+    jsonl_prompt: Option<String>,
+) -> Option<CodexSessionTitle> {
+    if let Some(row) = db {
+        if let Some(name) = row.name.as_deref().and_then(|s| usable_title_text(s)) {
+            return Some(CodexSessionTitle {
+                title: truncate_chars(&name, 240),
+                user_named: true,
+            });
+        }
+        for candidate in [row.title.as_deref(), row.first_user_message.as_deref()] {
+            if let Some(text) = candidate.and_then(|s| usable_title_text(s)) {
+                return Some(CodexSessionTitle {
+                    title: truncate_chars(&text, 240),
+                    user_named: false,
+                });
+            }
+        }
+    }
+    jsonl_prompt.map(|title| CodexSessionTitle {
+        title,
+        user_named: false,
+    })
+}
+
+fn get_codex_session_title_info_inner(session_id: String) -> Result<Option<CodexSessionTitle>, String> {
+    if session_id.is_empty() || session_id.contains(['/', '\\']) {
+        return Ok(None);
+    }
+    let db = load_codex_thread_titles(&session_id);
+    let jsonl_prompt = scan_codex_jsonl_prompt(&session_id);
+    Ok(resolve_codex_session_title(db, jsonl_prompt))
+}
+
+fn get_codex_session_title_inner(session_id: String) -> Result<Option<String>, String> {
+    Ok(get_codex_session_title_info_inner(session_id)?.map(|info| info.title))
+}
+
+/// Mirrors `get_claude_session_title_info`: exposes rename vs automatic title.
+#[tauri::command]
+pub async fn get_codex_session_title_info(
+    session_id: String,
+) -> Result<Option<CodexSessionTitle>, String> {
+    tokio::task::spawn_blocking(move || get_codex_session_title_info_inner(session_id))
+        .await
+        .map_err(|error| format!("get_codex_session_title_info: blocking task failed: {error}"))?
 }
 
 /// Mirrors `get_claude_session_title`: a pane header only needs the title of
@@ -235,7 +375,7 @@ fn get_codex_session_title_inner(session_id: String) -> Result<Option<String>, S
 pub async fn get_codex_session_title(session_id: String) -> Result<Option<String>, String> {
     tokio::task::spawn_blocking(move || get_codex_session_title_inner(session_id))
         .await
-        .map_err(|error| format!("get_codex_session_title: falha na task bloqueante: {error}"))?
+        .map_err(|error| format!("get_codex_session_title: blocking task failed: {error}"))?
 }
 
 #[cfg(test)]
@@ -271,14 +411,49 @@ mod session_meta_tests {
 
 #[cfg(test)]
 mod title_tests {
-    use super::codex_first_user_text;
+    use super::{
+        codex_event_user_text, codex_response_item_user_text, is_injected_codex_text,
+        resolve_codex_session_title, CodexThreadTitles,
+    };
 
     #[test]
     fn skips_injected_environment_context_and_finds_the_real_prompt() {
         let env_context = r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>\n  <cwd>C:\\Users\\kauam</cwd>\n</environment_context>"}]}}"#;
         let real_prompt = r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"oi"}]}}"#;
-        assert_eq!(codex_first_user_text(env_context), None);
-        assert_eq!(codex_first_user_text(real_prompt).as_deref(), Some("oi"));
+        assert_eq!(codex_response_item_user_text(env_context), None);
+        assert_eq!(codex_response_item_user_text(real_prompt).as_deref(), Some("oi"));
+    }
+
+    #[test]
+    fn ignores_agents_md_instructions_blocks() {
+        let injected = "# AGENTS.md instructions <INSTRUCTIONS>\ndo things";
+        assert!(is_injected_codex_text(injected));
+        let response_item = format!(
+            r#"{{"type":"response_item","payload":{{"type":"message","role":"user","content":[{{"type":"input_text","text":"{injected}"}}]}}}}"#
+        );
+        assert_eq!(codex_response_item_user_text(&response_item), None);
+    }
+
+    #[test]
+    fn reads_event_msg_user_message_with_codex_prefix() {
+        let line = "{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"## My request for Codex:\\nfix the bug\"}}";
+        assert_eq!(
+            codex_event_user_text(line).as_deref(),
+            Some("fix the bug")
+        );
+    }
+
+    #[test]
+    fn prefers_sqlite_rename_over_automatic_title() {
+        let db = CodexThreadTitles {
+            name: Some("BS-20059".to_string()),
+            title: Some("Automatic".to_string()),
+            first_user_message: None,
+        };
+        let resolved = resolve_codex_session_title(Some(db), Some("jsonl title".to_string()))
+            .expect("title");
+        assert_eq!(resolved.title, "BS-20059");
+        assert!(resolved.user_named);
     }
 
     #[test]
@@ -286,8 +461,19 @@ mod title_tests {
         let developer = r#"{"type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"some instructions"}]}}"#;
         let assistant = r#"{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hi there"}]}}"#;
         let other_record = r#"{"type":"event_msg","payload":{"type":"task_started"}}"#;
-        assert_eq!(codex_first_user_text(developer), None);
-        assert_eq!(codex_first_user_text(assistant), None);
-        assert_eq!(codex_first_user_text(other_record), None);
+        assert_eq!(codex_response_item_user_text(developer), None);
+        assert_eq!(codex_response_item_user_text(assistant), None);
+        assert_eq!(codex_response_item_user_text(other_record), None);
+    }
+
+    #[test]
+    fn session_title_info_uses_the_frontend_field_names() {
+        let value = serde_json::to_value(super::CodexSessionTitle {
+            title: "Session".to_string(),
+            user_named: true,
+        })
+        .unwrap();
+        assert_eq!(value["title"], "Session");
+        assert_eq!(value["userNamed"], true);
     }
 }
