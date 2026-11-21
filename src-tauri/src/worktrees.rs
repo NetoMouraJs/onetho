@@ -93,6 +93,7 @@ pub(crate) fn worktree_provision_inner(
     // dentro da outra.
     let root = main_repository_root(&repo)?;
     let id = sanitize_id(&agent_id)?;
+    crate::orchestrator_core::exclude_locally(&root, "/.alethe/")?;
     let base = worktrees_base(&root);
     std::fs::create_dir_all(&base).map_err(|error| format!("mkdir_failed:{error}"))?;
 

@@ -300,6 +300,34 @@ fn git(cwd: &std::path::Path, args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+/// Keeps a path Alethe writes inside a checkout out of `git status`: adds it to the repository's
+/// `info/exclude`, which every worktree of the repository shares, unless git already ignores it.
+/// Never touches a versioned `.gitignore`.
+pub fn exclude_locally(repo: &std::path::Path, pattern: &str) -> Result<(), String> {
+    let relative = pattern.trim_start_matches('/');
+    if git(repo, &["check-ignore", "-q", "--no-index", relative]).is_ok() {
+        return Ok(());
+    }
+    let common = git(
+        repo,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )?;
+    let info = PathBuf::from(common).join("info");
+    std::fs::create_dir_all(&info).map_err(|error| error.to_string())?;
+    let path = info.join("exclude");
+    let mut body = std::fs::read_to_string(&path).unwrap_or_default();
+    let wanted = pattern.trim_matches('/');
+    if body.lines().any(|line| line.trim().trim_matches('/') == wanted) {
+        return Ok(());
+    }
+    if !body.is_empty() && !body.ends_with('\n') {
+        body.push('\n');
+    }
+    body.push_str(pattern);
+    body.push('\n');
+    std::fs::write(&path, body).map_err(|error| error.to_string())
+}
+
 /// Same path/branch convention as `worktrees.rs` (`<repo>/.alethe/worktrees/<id>/`,
 /// `alethe/agent-<id>`) on purpose, so its functions can later commit/fetch/remove this worktree —
 /// this module stays crate-free (see file header), so it can't call `worktrees.rs` directly.
@@ -307,6 +335,7 @@ fn isolate_worktree(cwd: &str, job_id: &str) -> Result<String, String> {
     let origin = PathBuf::from(cwd);
     let root = git(&origin, &["rev-parse", "--show-toplevel"])?;
     let root = PathBuf::from(root.replace('/', std::path::MAIN_SEPARATOR_STR));
+    exclude_locally(&root, "/.alethe/")?;
     let base = root.join(".alethe").join("worktrees");
     std::fs::create_dir_all(&base).map_err(|error| error.to_string())?;
     let target = base.join(job_id);
@@ -1340,6 +1369,45 @@ fn claude_worker_args(
     args
 }
 
+/// Roles the ai-memory hook records as they are; any other role, or none, is `automation`.
+const AI_MEMORY_SESSION_ROLES: [&str; 3] = ["builder", "reviewer", "qa"];
+
+/// What a worker's launch adds for ai-memory, so a worker never consumes or leaves the user's
+/// handoff and a reviewer/QA worker gets no recall at all. Old ai-memory builds ignore the
+/// variables, so they are always set; capture is untouched either way.
+fn ai_memory_worker_launch(
+    agent: &str,
+    role: Option<&str>,
+    label: &str,
+) -> (Vec<String>, Vec<(String, String)>) {
+    let role = role
+        .map(str::to_ascii_lowercase)
+        .filter(|role| AI_MEMORY_SESSION_ROLES.contains(&role.as_str()))
+        .unwrap_or_else(|| "automation".to_string());
+    let no_recall = role == "reviewer" || role == "qa";
+    let inject = if no_recall { "none" } else { "no-handoff" };
+    let env = vec![
+        ("AI_MEMORY_HOOK_INJECT".to_string(), inject.to_string()),
+        ("AI_MEMORY_AUTO_HANDOFF".to_string(), "off".to_string()),
+        ("AI_MEMORY_SESSION_ROLE".to_string(), role),
+        ("AI_MEMORY_SESSION_LABEL".to_string(), label.to_string()),
+    ];
+    let args = match (no_recall, agent) {
+        (true, "claude") => vec!["--disallowedTools".to_string(), "mcp__ai-memory__*".to_string()],
+        (true, "codex") => vec!["-c".to_string(), "mcp_servers.ai-memory.enabled=false".to_string()],
+        _ => Vec::new(),
+    };
+    (args, env)
+}
+
+/// The name a worker's ai-memory session gets: the delegate's label with the job id, or the id.
+fn ai_memory_session_label(run_label: Option<&str>, job_id: &str) -> String {
+    match run_label.map(str::trim).filter(|label| !label.is_empty()) {
+        Some(label) => format!("{label} ({job_id})"),
+        None => job_id.to_string(),
+    }
+}
+
 fn send_rpc(stdin: &Arc<Mutex<ChildStdin>>, value: &Value) -> Result<(), String> {
     let mut stdin = guard(stdin);
     serde_json::to_writer(&mut *stdin, value).map_err(|error| error.to_string())?;
@@ -2024,7 +2092,7 @@ impl Core {
         // Read before `inner` is locked: `Core::rule_sets` takes its own lock, and holding both at
         // once is how this file deadlocks.
         let sets = self.rule_sets();
-        let (agent, cwd, spec, resume_thread, approval_policy, sandbox, web_search, model, effort) = {
+        let (agent, cwd, spec, resume_thread, approval_policy, sandbox, web_search, model, effort, memory) = {
             let mut inner = guard(&self.inner);
             let Some(job) = inner.jobs.get_mut(job_id) else {
                 return;
@@ -2057,6 +2125,11 @@ impl Core {
                 job.web_search,
                 job.model.clone(),
                 job.effort.clone(),
+                ai_memory_worker_launch(
+                    &job.agent,
+                    job.role.as_deref(),
+                    &ai_memory_session_label(job.run_label.as_deref(), &job.id),
+                ),
             );
             inner.running += 1;
             started
@@ -2089,7 +2162,9 @@ impl Core {
                 effort.as_deref(),
             ));
         }
-        for (key, value) in &launcher.env {
+        let (memory_args, memory_env) = memory;
+        command.args(memory_args);
+        for (key, value) in launcher.env.iter().chain(memory_env.iter()) {
             command.env(key, value);
         }
         #[cfg(windows)]
@@ -2933,6 +3008,79 @@ fn first_turn_for(sets: &[RuleSet], job: &Job) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn env_of<'a>(env: &'a [(String, String)], key: &str) -> Option<&'a str> {
+        env.iter().find(|(name, _)| name == key).map(|(_, value)| value.as_str())
+    }
+
+    #[test]
+    fn a_builder_worker_keeps_recall_but_never_touches_the_handoff() {
+        let (args, env) = ai_memory_worker_launch("codex", Some("builder"), "LOCAL - JOB-1 (job-1)");
+        assert!(args.is_empty(), "{args:?}");
+        assert_eq!(env_of(&env, "AI_MEMORY_HOOK_INJECT"), Some("no-handoff"));
+        assert_eq!(env_of(&env, "AI_MEMORY_AUTO_HANDOFF"), Some("off"));
+        assert_eq!(env_of(&env, "AI_MEMORY_SESSION_ROLE"), Some("builder"));
+        assert_eq!(env_of(&env, "AI_MEMORY_SESSION_LABEL"), Some("LOCAL - JOB-1 (job-1)"));
+    }
+
+    #[test]
+    fn a_reviewer_or_qa_worker_gets_no_recall_on_either_agent() {
+        for role in ["reviewer", "QA"] {
+            let (args, env) = ai_memory_worker_launch("codex", Some(role), "job-2");
+            assert_eq!(args, ["-c", "mcp_servers.ai-memory.enabled=false"]);
+            assert_eq!(env_of(&env, "AI_MEMORY_HOOK_INJECT"), Some("none"));
+            assert_eq!(env_of(&env, "AI_MEMORY_SESSION_ROLE"), Some(role.to_ascii_lowercase().as_str()));
+            let (args, _) = ai_memory_worker_launch("claude", Some(role), "job-2");
+            assert_eq!(args, ["--disallowedTools", "mcp__ai-memory__*"]);
+        }
+    }
+
+    #[test]
+    fn a_worker_without_a_known_role_runs_as_automation() {
+        for role in [None, Some("architect")] {
+            let (args, env) = ai_memory_worker_launch("claude", role, "job-3");
+            assert!(args.is_empty(), "{args:?}");
+            assert_eq!(env_of(&env, "AI_MEMORY_SESSION_ROLE"), Some("automation"));
+            assert_eq!(env_of(&env, "AI_MEMORY_HOOK_INJECT"), Some("no-handoff"));
+            assert_eq!(env_of(&env, "AI_MEMORY_AUTO_HANDOFF"), Some("off"));
+        }
+    }
+
+    #[test]
+    fn the_session_label_names_the_delegate_label_and_the_job() {
+        assert_eq!(ai_memory_session_label(Some("LOCAL - JOB-4"), "job-4"), "LOCAL - JOB-4 (job-4)");
+        assert_eq!(ai_memory_session_label(Some("  "), "job-4"), "job-4");
+        assert_eq!(ai_memory_session_label(None, "job-4"), "job-4");
+    }
+
+    fn scratch_repo(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("alethe-exclude-{name}-{}", now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        git(&dir, &["init", "-q"]).unwrap();
+        dir
+    }
+
+    #[test]
+    fn excluding_a_path_writes_info_exclude_once() {
+        let repo = scratch_repo("once");
+        exclude_locally(&repo, "/.alethe/").unwrap();
+        exclude_locally(&repo, "/.alethe/").unwrap();
+        let exclude = std::fs::read_to_string(repo.join(".git").join("info").join("exclude")).unwrap();
+        assert_eq!(exclude.lines().filter(|line| line.trim() == "/.alethe/").count(), 1, "{exclude}");
+        assert!(git(&repo, &["check-ignore", "-q", ".alethe/worktrees/x"]).is_ok());
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_path_the_gitignore_already_covers_is_not_excluded_again() {
+        let repo = scratch_repo("ignored");
+        std::fs::write(repo.join(".gitignore"), ".alethe/\n").unwrap();
+        exclude_locally(&repo, "/.alethe/").unwrap();
+        let exclude =
+            std::fs::read_to_string(repo.join(".git").join("info").join("exclude")).unwrap_or_default();
+        assert!(!exclude.contains(".alethe"), "{exclude}");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
 
     #[test]
     fn a_first_turn_carries_the_rules_then_the_task() {

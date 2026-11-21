@@ -13,6 +13,21 @@ export type AiMemoryStatus = {
   supported: boolean
   /** The server behind `endpoint`, if any, is the child process Alethe itself started. */
   ours: boolean
+  /** What the build reports in `ai-memory capabilities --json`; all off when it has no such command. */
+  capabilities: AiMemoryCapabilities
+}
+
+export type AiMemoryCapabilities = {
+  /** Workers keep the user's handoff, and reviewer/QA workers start without recall. */
+  workerContract: boolean
+  /** Captured worker sessions carry their role. */
+  sessionRoles: boolean
+  /** Captured worker sessions carry the job label. */
+  sessionLabel: boolean
+  /** The build's own name, e.g. `ownercode`. */
+  build: string | null
+  /** Where the build comes from (a GitHub address). */
+  repository: string | null
 }
 
 export async function aiMemoryDetect(command?: string): Promise<AiMemoryStatus> {
@@ -24,12 +39,16 @@ export async function aiMemoryMcpConfigPath(repo: string): Promise<string> {
   return invoke<string>('ai_memory_mcp_config_path', { repo })
 }
 
-export async function aiMemoryOpenCodeConfigWrite(repo: string): Promise<void> {
-  await invoke('ai_memory_opencode_config_write', { repo })
-}
-
-export async function aiMemoryCodexConfigWrite(repo: string): Promise<void> {
-  await invoke('ai_memory_codex_config_write', { repo })
+/**
+ * Prepares ai-memory for a Codex/OpenCode terminal in `repo` and returns its launch arguments.
+ * Leaves a global ai-memory setup alone and clears the in-repo entries earlier versions wrote.
+ */
+export async function aiMemoryTerminalSetup(
+  repo: string,
+  agent: 'codex' | 'opencode',
+  enabled: boolean,
+): Promise<string[]> {
+  return invoke<string[]>('ai_memory_terminal_setup', { repo, agent, enabled })
 }
 
 export type AiMemoryCounts = { sessions: number; observations: number; pages: number }

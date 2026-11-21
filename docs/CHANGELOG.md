@@ -469,6 +469,17 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
 
 ### Changed
 
+- **ai-memory for orchestrator workers.** Workers no longer read or leave the handoff meant for your
+  next session, and reviewer/QA workers start without ai-memory recall (no MCP, nothing injected at
+  start); capture still records them, tagged with their role and job label. Needs an ai-memory build
+  that understands the worker variables; older builds ignore them.
+- **Your own ai-memory comes first.** A copy you installed yourself is used before the one
+  Preferences installs, and Install is not offered while another ai-memory server already answers.
+- **Which ai-memory you run.** Preferences → AI Memory shows the installed version and whether it is
+  the OwnerCode build or upstream, lists what the build does for orchestrator workers (read from
+  `ai-memory capabilities --json`), links to that build's repository, and warns when the build cannot
+  protect your handoff from workers.
+
 - **ai-memory 3.x.** Preferences installs ai-memory 3.1.1. Agents use its token-aware stdio bridge
   on 3.x and retain HTTP on 2.x. Version detection times out after three seconds.
 
@@ -610,6 +621,13 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
 
 ### Fixed
 
+- **Codex and OpenCode keep your global ai-memory.** When ai-memory is in your global Codex or
+  OpenCode config, Alethe leaves it alone instead of writing an in-repo entry that overrode it (and
+  failed under Codex). Without one, Codex gets ai-memory as launch overrides, with nothing written to
+  the repository, and OpenCode in the repo's `opencode.json`, kept out of `git status`; both now use
+  the bridge form a non-Claude client needs. Untouched entries earlier versions wrote are removed.
+- **Alethe files stay out of `git status`.** Agent worktrees (`.alethe/`) and the Codex/OpenCode
+  config files Alethe writes into a repository are added to its local `.git/info/exclude`.
 - ai-memory installs accept Unix archives with a root directory entry, find manually installed
   binaries outside the app PATH, and avoid duplicating Claude Code capture hooks already configured.
 - **Light terminal contrast.** Light themes, including plugin themes, enforce a WCAG-AA contrast

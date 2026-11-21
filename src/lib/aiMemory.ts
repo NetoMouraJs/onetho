@@ -12,9 +12,41 @@ import type { AiMemoryStatus } from './tauri/aiMemory'
 
 export const AI_MEMORY_DEFAULT_PORT = 49374
 export const AI_MEMORY_REPO = 'https://github.com/akitaonrails/ai-memory'
+export const AI_MEMORY_OWNERCODE_REPO = 'https://github.com/NetoMouraJs/ai-memory'
+
+/**
+ * The OwnerCode build of ai-memory: the one that names itself so, or, for builds made before it
+ * reported a name, the one that honours the orchestrator worker contract.
+ */
+export function isOwnerCodeBuild(status: AiMemoryStatus | null): boolean {
+  const capabilities = status?.installed ? status.capabilities : undefined
+  if (!capabilities) return false
+  return capabilities.build ? capabilities.build === 'ownercode' : capabilities.workerContract
+}
+
+/** The repository behind the installed build: its own, the OwnerCode fork, or upstream. */
+export function aiMemoryRepoFor(status: AiMemoryStatus | null): string {
+  return (
+    (status?.installed ? status.capabilities.repository : null) ??
+    (isOwnerCodeBuild(status) ? AI_MEMORY_OWNERCODE_REPO : AI_MEMORY_REPO)
+  )
+}
+
+/** The worker features an installed build supports, in display order; empty for upstream builds. */
+export function aiMemoryWorkerFlags(
+  status: AiMemoryStatus | null,
+): Array<'handoff' | 'reviewers' | 'sessions'> {
+  const capabilities = status?.installed ? status.capabilities : undefined
+  if (!capabilities) return []
+  const flags: Array<'handoff' | 'reviewers' | 'sessions'> = []
+  if (capabilities.workerContract) flags.push('handoff', 'reviewers')
+  if (capabilities.sessionRoles && capabilities.sessionLabel) flags.push('sessions')
+  return flags
+}
 
 export function offerInstall(status: AiMemoryStatus | null): boolean {
-  return Boolean(status && !status.installed && status.supported)
+  // A server already answering is someone else's copy: installing another would split the memory.
+  return Boolean(status && !status.installed && !status.running && status.supported)
 }
 
 export function canStart(status: AiMemoryStatus | null): boolean {
