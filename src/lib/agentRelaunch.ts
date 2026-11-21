@@ -1,6 +1,7 @@
 import { useProjectsStore } from '../stores/projectsStore'
 import { useTerminalsStore } from '../stores/terminalsStore'
 import { preparePtyRuntimeLaunch } from './agentRuntimeAdapter'
+import { aiMemoryTerminalArgs } from './aiMemoryLaunch'
 import { claudeLaunchExtras, recordClaudeLaunch } from './claudeMcpConfigs'
 import { ptyLaunchTarget } from './ptyLaunchTarget'
 import { type AgentLaunch, buildAgentLaunch } from './sessionLaunch'
@@ -36,6 +37,7 @@ export async function relaunchAgentPty({
   })
   const extras =
     agent === 'claude' ? await claudeLaunchExtras({ ptyId, cwd, graphifyRepo }) : undefined
+  const memoryArgs = await aiMemoryTerminalArgs(agent, cwd)
   const launch = buildAgentLaunch(
     agent,
     prepared.args,
@@ -52,7 +54,8 @@ export async function relaunchAgentPty({
     // A plain shell tab has no CLI and restarts on the shell chosen in Preferences, if any.
     ...ptyLaunchTarget(agent),
     cwd: cwd || undefined,
-    extraArgs: launch.args,
+    // Codex's `-c` overrides are root options, so they go before any subcommand (`resume`).
+    extraArgs: [...memoryArgs, ...launch.args],
     runAsAdmin: agent === 'shell' && runAsAdmin,
     env: { ...(prepared.env ?? {}), ALETHE_PLANNER: ptyId },
   })

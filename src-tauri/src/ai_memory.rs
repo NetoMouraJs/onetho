@@ -115,6 +115,8 @@ pub struct AiMemoryStatus {
     managed: bool,
     /// Upstream publishes a build for this machine. False on Windows ARM64.
     supported: bool,
+    /// What the build reports in `ai-memory capabilities --json`; all off for builds without it.
+    capabilities: AiMemoryCapabilities,
     /// The server behind `endpoint`, if one is running, is the child Alethe itself started.
     ///
     /// This has to come from the tracked child handle, not from anything a screen remembers: the
@@ -352,16 +354,93 @@ pub fn ai_memory_detect(
         .map(|mut guard| matches!(guard.as_mut().map(|child| child.try_wait()), Some(Ok(None))))
         .unwrap_or(false);
 
+    let capabilities = if installed {
+        capabilities_of(&cmd, version.as_deref())
+    } else {
+        AiMemoryCapabilities::default()
+    };
+
     Ok(AiMemoryStatus {
         installed,
         running,
         managed: managed.as_deref() == Some(cmd.as_str()),
         supported: release_asset(std::env::consts::OS, std::env::consts::ARCH).is_some(),
+        capabilities,
         command: cmd,
         endpoint: DEFAULT_ENDPOINT.to_string(),
         version,
         ours,
     })
+}
+
+/// What an ai-memory build reports in `ai-memory capabilities --json` (the OwnerCode build has
+/// it; upstream does not, and gets all of it off).
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiMemoryCapabilities {
+    /// Workers neither read nor leave the user's handoff, and reviewer/QA workers get no recall
+    /// (`AI_MEMORY_HOOK_INJECT` with `no-handoff` and `none`).
+    worker_contract: bool,
+    /// Captured worker sessions carry their role (`AI_MEMORY_SESSION_ROLE`).
+    session_roles: bool,
+    /// Captured worker sessions carry the job label (`AI_MEMORY_SESSION_LABEL`).
+    session_label: bool,
+    /// The build's own name, e.g. `ownercode`.
+    build: Option<String>,
+    /// Where the build comes from; only an `https://github.com/` address is kept.
+    repository: Option<String>,
+}
+
+/// The capabilities of `cmd`. Cached per binary and version, so a terminal launch does not start
+/// another process each time.
+fn capabilities_of(cmd: &str, version: Option<&str>) -> AiMemoryCapabilities {
+    static CACHE: OnceLock<Mutex<HashMap<(String, String), AiMemoryCapabilities>>> =
+        OnceLock::new();
+    let key = (cmd.to_string(), version.unwrap_or_default().to_string());
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(known) = cache.lock().ok().and_then(|cache| cache.get(&key).cloned()) {
+        return known;
+    }
+    let mut probe = Command::new(cmd);
+    probe.args(["capabilities", "--json"]);
+    hide_console(&mut probe);
+    let capabilities = probe_version_with_timeout(probe, VERSION_PROBE_TIMEOUT)
+        .map(|output| parse_capabilities(&output))
+        .unwrap_or_default();
+    if let Ok(mut cache) = cache.lock() {
+        cache.insert(key, capabilities.clone());
+    }
+    capabilities
+}
+
+fn parse_capabilities(output: &str) -> AiMemoryCapabilities {
+    let Ok(value) = serde_json::from_str::<Value>(output) else {
+        return AiMemoryCapabilities::default();
+    };
+    let strings = |key: &str| -> Vec<String> {
+        value
+            .get(key)
+            .and_then(Value::as_array)
+            .map(|items| items.iter().filter_map(Value::as_str).map(str::to_string).collect())
+            .unwrap_or_default()
+    };
+    let text = |key: &str| {
+        value
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(str::to_string)
+    };
+    let levels = strings("hook_inject_env");
+    AiMemoryCapabilities {
+        worker_contract: levels.iter().any(|level| level == "none")
+            && levels.iter().any(|level| level == "no-handoff"),
+        session_roles: !strings("session_role_env").is_empty(),
+        session_label: value.get("session_label_env").and_then(Value::as_bool) == Some(true),
+        build: text("build"),
+        repository: text("repository").filter(|url| url.starts_with("https://github.com/")),
+    }
 }
 
 fn endpoint_alive(endpoint: &str) -> bool {
@@ -400,6 +479,146 @@ pub fn ai_memory_project_config_cleanup(repo: String) -> Result<(), String> {
         .map_err(|_| "opencode.json lock poisoned".to_string())?;
     cleanup_codex_config(&root.join(".codex").join("config.toml"))?;
     cleanup_opencode_config(&root.join("opencode.json"))
+}
+
+/// Sets up ai-memory for a Codex or OpenCode terminal about to open in `repo`, and returns the
+/// launch arguments it needs.
+///
+/// A person who registered ai-memory in their own global config keeps it untouched: the terminal
+/// gets nothing, and only the in-repo entries earlier versions wrote are removed. Otherwise, with
+/// the feature on, Codex gets the server through `-c` overrides (nothing written to the repo), and
+/// OpenCode, which has no documented launch override, gets it in the repo's `opencode.json`, kept
+/// out of `git status` through `info/exclude`. Both use the bridge with `--no-session-id`, the form
+/// a client other than Claude Code needs.
+#[tauri::command]
+pub fn ai_memory_terminal_setup(
+    app: AppHandle,
+    repo: String,
+    agent: String,
+    enabled: bool,
+) -> Result<Vec<String>, String> {
+    let configure = enabled
+        && match agent.as_str() {
+            "codex" => !codex_global_has_entry(),
+            "opencode" => !opencode_global_has_entry(),
+            _ => return Ok(Vec::new()),
+        };
+    if !configure {
+        ai_memory_project_config_cleanup(repo)?;
+        return Ok(Vec::new());
+    }
+    let (cmd, data_dir) = command_for(&app, None);
+    let transport = transport_for(major_version(&cmd), cmd, data_dir);
+    if agent == "opencode" {
+        ai_memory_opencode_config_write(&repo, &transport)?;
+        return Ok(Vec::new());
+    }
+    ai_memory_project_config_cleanup(repo)?;
+    Ok(codex_override_args(DEFAULT_PORT, &transport))
+}
+
+/// A TOML string that survives a Windows command line untouched: a literal string (no quotes or
+/// backslashes to escape) whenever the value allows one.
+fn toml_literal(value: &str) -> String {
+    if value.contains('\'') || value.contains('\n') {
+        toml_string(value)
+    } else {
+        format!("'{value}'")
+    }
+}
+
+/// `-c` overrides that register ai-memory for one Codex launch.
+fn codex_override_args(port: u16, transport: &McpTransport) -> Vec<String> {
+    match transport {
+        McpTransport::Http => vec![
+            "-c".to_string(),
+            format!("mcp_servers.{MCP_KEY}.url={}", toml_literal(&mcp_url(port))),
+        ],
+        McpTransport::Bridge { command, data_dir } => {
+            let args = bridge_args(data_dir.as_deref(), port, &["--no-session-id"])
+                .iter()
+                .map(|arg| toml_literal(arg))
+                .collect::<Vec<_>>()
+                .join(",");
+            vec![
+                "-c".to_string(),
+                format!("mcp_servers.{MCP_KEY}.command={}", toml_literal(command)),
+                "-c".to_string(),
+                format!("mcp_servers.{MCP_KEY}.args=[{args}]"),
+            ]
+        }
+    }
+}
+
+/// Whether the person's global Codex config already registers ai-memory (any form, enabled or not).
+fn codex_global_has_entry() -> bool {
+    let home = std::env::var_os("CODEX_HOME")
+        .map(PathBuf::from)
+        .or_else(|| dirs_next::home_dir().map(|home| home.join(".codex")));
+    let Some(raw) = home.and_then(|home| std::fs::read_to_string(home.join("config.toml")).ok())
+    else {
+        return false;
+    };
+    codex_config_has_entry(&raw)
+}
+
+fn codex_config_has_entry(raw: &str) -> bool {
+    raw.parse::<toml_edit::DocumentMut>()
+        .ok()
+        .and_then(|doc| doc.get("mcp_servers")?.get(MCP_KEY).map(|_| ()))
+        .is_some()
+}
+
+/// Whether the person's global OpenCode config already registers ai-memory. The file may be JSONC,
+/// so this looks for the key rather than parsing it.
+fn opencode_global_has_entry() -> bool {
+    let config_home = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| dirs_next::home_dir().map(|home| home.join(".config")));
+    let Some(dir) = config_home.map(|home| home.join("opencode")) else {
+        return false;
+    };
+    ["opencode.json", "opencode.jsonc"].iter().any(|name| {
+        std::fs::read_to_string(dir.join(name))
+            .is_ok_and(|raw| raw.contains(&format!("\"{MCP_KEY}\"")))
+    })
+}
+
+/// Writes Onetho's ai-memory entry into the repo's `opencode.json`, replacing an earlier one.
+fn ai_memory_opencode_config_write(repo: &str, transport: &McpTransport) -> Result<(), String> {
+    let _guard = crate::provider_common::opencode_json_lock()
+        .lock()
+        .map_err(|_| "opencode.json lock poisoned".to_string())?;
+    let root = repository_root(repo)?;
+    let path = root.join("opencode.json");
+    let mut config: serde_json::Map<String, Value> = if path.is_file() {
+        let raw = std::fs::read_to_string(&path).map_err(|e| format!("read_failed:{e}"))?;
+        match serde_json::from_str::<Value>(&raw) {
+            Ok(Value::Object(map)) => map,
+            // Not ours to rewrite when it does not parse as plain JSON.
+            _ => return Ok(()),
+        }
+    } else {
+        let mut map = serde_json::Map::new();
+        map.insert(
+            "$schema".to_string(),
+            Value::String("https://opencode.ai/config.json".to_string()),
+        );
+        map
+    };
+    let entry = opencode_mcp_entry(DEFAULT_PORT, transport);
+    let mcp = config
+        .entry("mcp".to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    if let Value::Object(mcp) = mcp {
+        if mcp.get(MCP_KEY) == Some(&entry) {
+            return Ok(());
+        }
+        mcp.insert(MCP_KEY.to_string(), entry);
+    }
+    let body = serde_json::to_string_pretty(&Value::Object(config)).map_err(|e| e.to_string())?;
+    let _ = crate::orchestrator_core::exclude_locally(&root, "/opencode.json");
+    std::fs::write(&path, body).map_err(|e| format!("write_failed:{e}"))
 }
 
 fn cleanup_codex_config(path: &Path) -> Result<(), String> {
@@ -1106,6 +1325,104 @@ mod tests {
             command: "/opt/bin/ai-memory".into(),
             data_dir: data_dir.map(str::to_string),
         }
+    }
+
+    /// Reads the `-c key=value` overrides back the way Codex does: each value is TOML.
+    fn overrides_as_toml(args: &[String]) -> toml_edit::DocumentMut {
+        let pairs: Vec<&String> = args.iter().skip(1).step_by(2).collect();
+        assert!(args.iter().step_by(2).all(|flag| flag == "-c"), "{args:?}");
+        pairs
+            .iter()
+            .map(|pair| pair.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+            .parse()
+            .expect("overrides parse as TOML")
+    }
+
+    #[test]
+    fn codex_gets_the_bridge_without_a_session_id_through_overrides() {
+        let transport = McpTransport::Bridge {
+            command: r"C:\Program Files\ai-memory\ai-memory.exe".into(),
+            data_dir: Some(r"C:\Users\me\AppData\Local\ai-memory".into()),
+        };
+        let args = codex_override_args(DEFAULT_PORT, &transport);
+        assert!(args.iter().all(|arg| !arg.contains('"')), "{args:?}");
+        let doc = overrides_as_toml(&args);
+        let entry = &doc["mcp_servers"][MCP_KEY];
+        assert_eq!(entry["command"].as_str(), Some(r"C:\Program Files\ai-memory\ai-memory.exe"));
+        let argv: Vec<&str> = entry["args"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|arg| arg.as_str())
+            .collect();
+        assert_eq!(
+            argv,
+            [
+                "--data-dir",
+                r"C:\Users\me\AppData\Local\ai-memory",
+                "mcp-bridge",
+                "--no-session-id",
+                "--server-url",
+                "http://127.0.0.1:49374/mcp"
+            ]
+        );
+    }
+
+    #[test]
+    fn codex_gets_the_url_through_an_override_on_2x() {
+        let doc = overrides_as_toml(&codex_override_args(DEFAULT_PORT, &McpTransport::Http));
+        assert_eq!(
+            doc["mcp_servers"][MCP_KEY]["url"].as_str(),
+            Some("http://127.0.0.1:49374/mcp")
+        );
+    }
+
+    #[test]
+    fn a_value_with_an_apostrophe_falls_back_to_a_basic_string() {
+        let value = r"C:\Users\o'neil\ai-memory.exe";
+        let doc: toml_edit::DocumentMut = format!("v = {}", toml_literal(value)).parse().unwrap();
+        assert_eq!(doc["v"].as_str(), Some(value));
+        assert_eq!(toml_literal(r"C:\a b"), r"'C:\a b'");
+    }
+
+    #[test]
+    fn a_global_codex_entry_in_any_form_counts() {
+        assert!(codex_config_has_entry("[mcp_servers.ai-memory]\ncommand = \"x\"\n"));
+        assert!(codex_config_has_entry("[mcp_servers.\"ai-memory\"]\nenabled = false\n"));
+        assert!(!codex_config_has_entry("[mcp_servers.other]\nurl = \"x\"\n"));
+        assert!(!codex_config_has_entry("not toml ["));
+    }
+
+    #[test]
+    fn the_ownercode_capabilities_are_read_whole() {
+        let fork = r#"{"hook_inject_env":["all","no-handoff","none"],"session_role_env":["automation","builder","reviewer","qa"],"session_label_env":true,"build":"ownercode","repository":"https://github.com/NetoMouraJs/ai-memory"}"#;
+        assert_eq!(
+            parse_capabilities(fork),
+            AiMemoryCapabilities {
+                worker_contract: true,
+                session_roles: true,
+                session_label: true,
+                build: Some("ownercode".into()),
+                repository: Some("https://github.com/NetoMouraJs/ai-memory".into()),
+            }
+        );
+    }
+
+    #[test]
+    fn missing_or_partial_capabilities_switch_features_off() {
+        let today = r#"{"hook_inject_env":["all","no-handoff","none"],"session_role_env":["qa"],"session_label_env":true}"#;
+        let parsed = parse_capabilities(today);
+        assert!(parsed.worker_contract && parsed.session_roles && parsed.session_label);
+        assert_eq!(parsed.build, None);
+        assert!(!parse_capabilities(r#"{"hook_inject_env":["all"]}"#).worker_contract);
+        assert_eq!(
+            parse_capabilities("error: unrecognized subcommand 'capabilities'"),
+            AiMemoryCapabilities::default()
+        );
+        let odd = parse_capabilities(r#"{"repository":"javascript:alert(1)"}"#);
+        assert_eq!(odd.repository, None);
     }
 
     /// A Codex config as earlier versions left it: the person's own content, then Onetho's block.

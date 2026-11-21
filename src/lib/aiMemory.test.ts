@@ -1,14 +1,36 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  AI_MEMORY_OWNERCODE_REPO,
+  AI_MEMORY_REPO,
   aiMemoryErrorMessage,
+  aiMemoryRepoFor,
   type AiMemoryStatus,
+  aiMemoryWorkerFlags,
   canStart,
+  isOwnerCodeBuild,
   normalizePort,
   offerInstall,
   portOwnedByOther,
 } from './aiMemory'
 import type { TFunction } from './i18n'
+import type { AiMemoryCapabilities } from './tauri/aiMemory'
+
+const NO_CAPABILITIES: AiMemoryCapabilities = {
+  workerContract: false,
+  sessionRoles: false,
+  sessionLabel: false,
+  build: null,
+  repository: null,
+}
+
+/** What the OwnerCode build reported before it named itself. */
+const WORKER_CAPABILITIES: AiMemoryCapabilities = {
+  ...NO_CAPABILITIES,
+  workerContract: true,
+  sessionRoles: true,
+  sessionLabel: true,
+}
 
 function status(patch: Partial<AiMemoryStatus> = {}): AiMemoryStatus {
   return {
@@ -20,9 +42,43 @@ function status(patch: Partial<AiMemoryStatus> = {}): AiMemoryStatus {
     managed: false,
     supported: true,
     ours: false,
+    capabilities: NO_CAPABILITIES,
     ...patch,
   }
 }
+
+describe('which ai-memory build is installed', () => {
+  it('names an upstream build and links upstream', () => {
+    const upstream = status({ installed: true })
+    expect(isOwnerCodeBuild(upstream)).toBe(false)
+    expect(aiMemoryWorkerFlags(upstream)).toEqual([])
+    expect(aiMemoryRepoFor(upstream)).toBe(AI_MEMORY_REPO)
+  })
+
+  it('takes a build with the worker contract as OwnerCode until it names itself', () => {
+    const fork = status({ installed: true, capabilities: WORKER_CAPABILITIES })
+    expect(isOwnerCodeBuild(fork)).toBe(true)
+    expect(aiMemoryWorkerFlags(fork)).toEqual(['handoff', 'reviewers', 'sessions'])
+    expect(aiMemoryRepoFor(fork)).toBe(AI_MEMORY_OWNERCODE_REPO)
+  })
+
+  it('trusts the name and repository a build reports', () => {
+    const named = status({
+      installed: true,
+      capabilities: {
+        ...WORKER_CAPABILITIES,
+        build: 'other',
+        repository: 'https://github.com/someone/ai-memory',
+      },
+    })
+    expect(isOwnerCodeBuild(named)).toBe(false)
+    expect(aiMemoryRepoFor(named)).toBe('https://github.com/someone/ai-memory')
+  })
+
+  it('reads nothing from a binary that is not installed', () => {
+    expect(isOwnerCodeBuild(status({ capabilities: WORKER_CAPABILITIES }))).toBe(false)
+  })
+})
 
 describe('whether the panel offers to install', () => {
   it('offers when nothing is installed and upstream builds for this machine', () => {
@@ -43,7 +99,9 @@ describe('whether the panel offers to install', () => {
     expect(offerInstall(status({ running: true }))).toBe(false)
   })
 
-  it('offers nothing while the status is unknown', () => {
+  it('offers nothing while the status is unknown, and names no build', () => {
+    expect(isOwnerCodeBuild(null)).toBe(false)
+    expect(aiMemoryWorkerFlags(null)).toEqual([])
     expect(offerInstall(null)).toBe(false)
   })
 })

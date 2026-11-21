@@ -23,6 +23,7 @@ import {
 } from '../../lib/agentPromptDelivery'
 import { resolveAgentCliCommand, resolveCustomAgentArgs } from '../../lib/agentProviders'
 import { preparePtyRuntimeLaunch } from '../../lib/agentRuntimeAdapter'
+import { aiMemoryTerminalArgs } from '../../lib/aiMemoryLaunch'
 import {
   type ClaudeLaunchExtras,
   claudeLaunchExtras,
@@ -57,7 +58,6 @@ import {
 } from '../../lib/sessionResume'
 import { acquireSpawnSlot, releaseSpawnSlot } from '../../lib/spawnQueue'
 import {
-  aiMemoryProjectConfigCleanup,
   attachPty,
   claudeSessionExists,
   clearPtyScrollback,
@@ -1426,12 +1426,12 @@ export function useXtermSession(params: {
           if (disposed) return
         }
 
-        // Codex and OpenCode take ai-memory from the user's global config; an in-repo entry would
-        // override it. Clear the ones earlier versions wrote, whatever the feature toggle says.
-        if (cwd && !wslTarget && (command === 'codex' || command === 'opencode')) {
-          await aiMemoryProjectConfigCleanup(cwd).catch(() => {})
-          if (disposed) return
-        }
+        // A global ai-memory setup wins; otherwise Codex gets it as launch overrides. Runs whatever
+        // the feature toggle says, so in-repo entries earlier versions wrote are cleared either way.
+        const aiMemoryArgs = wslTarget
+          ? []
+          : await aiMemoryTerminalArgs(command, cwd ?? undefined, warnAiMemoryMissing)
+        if (disposed) return
 
         const orchestratorEnabled =
           useProjectsStore.getState().preferences.enabledFeatures.orchestrator
@@ -1475,7 +1475,8 @@ export function useXtermSession(params: {
               hooksSettingsPath,
             )
           : { args: preparedRuntime.args, sessionId: undefined, createdSession: false }
-        const launchArgs = [...launch.args, ...router9Args]
+        // Codex's `-c` overrides are root options, so they go before any subcommand (`resume`).
+        const launchArgs = [...aiMemoryArgs, ...launch.args, ...router9Args]
         const spawnArgs = launchArgs.length > 0 ? launchArgs : undefined
         attachedSessionId = launch.sessionId
         if (command && command !== 'shell') {

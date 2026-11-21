@@ -743,6 +743,14 @@ export const ptBR: Record<MessageKey, string> = {
   'aiMemory.stopped': 'Parado',
   'aiMemory.portBusy':
     'Algo já responde em {endpoint} e não foi o Alethe que iniciou — provavelmente a sua própria cópia. O Alethe não vai mexer nela.',
+  'aiMemory.buildOwnerCode': 'Build OwnerCode',
+  'aiMemory.buildUpstream': 'Build upstream',
+  'aiMemory.flagsLabel': 'O que esta build faz pelos workers do orquestrador',
+  'aiMemory.flag.handoff': 'Workers mantêm o seu handoff',
+  'aiMemory.flag.reviewers': 'Revisores iniciam sem memória',
+  'aiMemory.flag.sessions': 'Sessões dos workers com role e job',
+  'aiMemory.noWorkerContract':
+    'Esta versão do ai-memory não suporta os workers do orquestrador: um worker pode consumir o handoff deixado para a sua próxima sessão, e os workers revisores ainda recebem memória ao iniciar.',
   'aiMemory.counts': '{pages} páginas · {sessions} sessões · {observations} observações',
   'aiMemory.installError': 'Não foi possível instalar o ai-memory.',
   'aiMemory.startError': 'Não foi possível iniciar o ai-memory.',
