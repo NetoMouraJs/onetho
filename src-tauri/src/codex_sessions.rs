@@ -388,6 +388,9 @@ mod find_session_file_tests {
     };
     use std::fs;
     use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+
+    static FIND_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn test_root(label: &str) -> PathBuf {
         let root =
@@ -406,6 +409,7 @@ mod find_session_file_tests {
 
     #[test]
     fn second_lookup_uses_cache_instead_of_walking_again() {
+        let _guard = FIND_TEST_LOCK.lock().unwrap();
         reset_codex_session_file_cache();
         let root = test_root("cache-hit");
         let session_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
@@ -424,6 +428,7 @@ mod find_session_file_tests {
 
     #[test]
     fn deleted_file_invalidates_cache_and_walks_again() {
+        let _guard = FIND_TEST_LOCK.lock().unwrap();
         reset_codex_session_file_cache();
         let root = test_root("cache-stale");
         let session_id = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
