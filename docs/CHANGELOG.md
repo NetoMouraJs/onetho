@@ -10,6 +10,12 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
 
 ## [Unreleased]
 
+### Fixed
+
+- **Codex session discovery honors `CODEX_HOME`.** Recent chats, reset-last-session, session titles, and
+  rollout usage now read `$CODEX_HOME/sessions` when `CODEX_HOME` is set, matching Codex and auth lookup;
+  the default remains `~/.codex/sessions`.
+
 - **Dev diagnostics.** A local dashboard traces Claude and Codex usage refreshes and frontend failures with correlation IDs, timing and safe error categories.
 - **Dev diagnostic details.** Failed events can show a sanitized frontend stack and their full event ID.
 

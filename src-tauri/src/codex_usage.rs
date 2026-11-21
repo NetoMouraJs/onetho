@@ -329,10 +329,7 @@ pub async fn get_codex_session_usage() -> Option<CodexSessionUsage> {
 
 /// Codex keeps its ChatGPT login in `$CODEX_HOME/auth.json` (default `~/.codex`).
 fn codex_auth_path() -> Option<PathBuf> {
-    std::env::var_os("CODEX_HOME")
-        .filter(|home| !home.is_empty())
-        .map(|home| PathBuf::from(home).join("auth.json"))
-        .or_else(|| crate::provider_common::provider_home_dir(&[".codex", "auth.json"]))
+    crate::codex_sessions::codex_home_dir().map(|home| home.join("auth.json"))
 }
 
 /// `(access_token, account_id)`; `None` for API-key logins or credentials kept in the OS keyring.

@@ -58,6 +58,26 @@ pub(crate) fn provider_scope(cwd: &str, segments: &[&str]) -> Option<ProviderSco
     )
 }
 
+/// Session files live under `root`; cwd matching follows the same WSL vs host rules as
+/// [`provider_scope`], but the tree root is fixed (for example `$CODEX_HOME/sessions`).
+pub(crate) fn provider_scope_at_root(cwd: &str, root: PathBuf) -> Option<ProviderScope> {
+    let wsl = crate::wsl::wsl_target(cwd);
+    let guest_cwd = wsl.as_ref().map(|path| path.linux_path.as_str());
+    let cwd = cwd.trim();
+    if guest_cwd.is_none() && cwd.is_empty() {
+        return None;
+    }
+    let (match_cwd, guest) = match guest_cwd {
+        Some(path) => (path.to_string(), true),
+        None => (cwd.to_string(), false),
+    };
+    Some(ProviderScope {
+        root,
+        match_cwd,
+        guest,
+    })
+}
+
 pub(crate) fn provider_scope_from(
     cwd: &str,
     windows_home: Option<&Path>,
