@@ -97,6 +97,10 @@ export async function openInVscode(path: string): Promise<void> {
   await invoke('open_in_vscode', { path })
 }
 
+export async function openInExternalEditor(path: string, editor: 'vscode' | 'cursor'): Promise<void> {
+  await invoke('open_in_external_editor', { path, editor })
+}
+
 export async function openInBrowser(target: string): Promise<void> {
   await invoke('open_in_browser', { target })
 }

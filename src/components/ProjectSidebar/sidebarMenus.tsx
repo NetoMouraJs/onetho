@@ -22,16 +22,11 @@ import {
 
 import { relaunchAgentPty } from '../../lib/agentRelaunch'
 import { graphifyRepoOf } from '../../lib/claudeMcpConfigs'
+import { externalEditorNameKey, openInExternalEditor } from '../../lib/externalEditor'
 import { pickFile, saveFile } from '../../lib/dialog'
 import { groupMoveTargets } from '../../lib/groupMoveTargets'
 import { useT } from '../../lib/i18n'
-import {
-  getPtyCwd,
-  openInFileExplorer,
-  openInVscode,
-  readTextFile,
-  writeTextFile,
-} from '../../lib/tauri'
+import { getPtyCwd, openInFileExplorer, readTextFile, writeTextFile } from '../../lib/tauri'
 import type { Group, Project, Terminal } from '../../lib/types'
 import { useProjectsStore } from '../../stores/projectsStore'
 import { useUiStore } from '../../stores/uiStore'
@@ -513,7 +508,10 @@ export function createSidebarMenus(deps: SidebarMenuDeps) {
   }
 
   const terminalMenu = (projectId: string, term: Terminal): MenuItem[] => {
-    const project = useProjectsStore.getState().projects.find((item) => item.id === projectId)
+    const { preferences, projects } = useProjectsStore.getState()
+    const externalEditor = preferences.externalEditor
+    const externalEditorLabel = t(externalEditorNameKey(externalEditor))
+    const project = projects.find((item) => item.id === projectId)
     const inSplit = openPaneSets[projectId]?.has(term.id) ?? false
     const activeTab = activeTerminalTab(term)
     const isTerminalPane = !term.kind || term.kind === 'terminal'
@@ -560,9 +558,14 @@ export function createSidebarMenus(deps: SidebarMenuDeps) {
             },
             {
               kind: 'item' as const,
-              label: t('ui.terminal.openInVscode'),
+              label: t('ui.terminal.openInExternalEditor', { editor: externalEditorLabel }),
               icon: <FolderOpen size={14} />,
-              onClick: () => void openTerminalPath(term, openInVscode, 'VS Code'),
+              onClick: () =>
+                void openTerminalPath(
+                  term,
+                  (path) => openInExternalEditor(path, externalEditor),
+                  externalEditorLabel,
+                ),
             },
             {
               kind: 'item' as const,

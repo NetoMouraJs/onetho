@@ -25,8 +25,9 @@ import { buildGhosttyCommand } from '../../lib/ghosttyCommand'
 import { useT } from '../../lib/i18n'
 import { startOrchestrationOn } from '../../lib/orchestrationOnTerminal'
 import { shouldUseNativeBackend } from '../../lib/platform'
+import { externalEditorNameKey, openInExternalEditor } from '../../lib/externalEditor'
 import { paneDisplayName } from '../../lib/sessionTitle'
-import { completeAgentHandoff, getPtyCwd, openInVscode } from '../../lib/tauri'
+import { completeAgentHandoff, getPtyCwd } from '../../lib/tauri'
 import {
   type AgentType,
   isShellAgentType,
@@ -38,7 +39,7 @@ import { useProjectsStore } from '../../stores/projectsStore'
 import { useTerminalsStore } from '../../stores/terminalsStore'
 import { useUiStore } from '../../stores/uiStore'
 import { GhosttySurface } from '../GhosttySurface'
-import { AgentIcon, VSCodeIcon } from '../icons/AgentIcons'
+import { AgentIcon, CursorIcon, VSCodeIcon } from '../icons/AgentIcons'
 import { SubTabsLane } from '../SubTabsLane'
 import { XTermView } from '../XTermView'
 import styles from './TerminalPane.module.css'
@@ -144,6 +145,8 @@ export const TerminalPane = memo(function TerminalPane({
   const claudeUsage = useUiStore((s) => s.claudeUsage)
   const claudeUsageStale = useUiStore((s) => s.claudeUsageError !== null)
   const codexUsage = useUiStore((s) => s.codexUsage)
+  const externalEditor = useProjectsStore((s) => s.preferences.externalEditor)
+  const externalEditorLabel = t(externalEditorNameKey(externalEditor))
   const terminalTheme = useProjectsStore(
     (s) => s.preferences.terminalTheme ?? s.preferences.uiTheme,
   )
@@ -198,15 +201,17 @@ export const TerminalPane = memo(function TerminalPane({
       (claudeUsage?.five_hour.utilization ?? 0) >= 100) ||
     (activeTab?.type === 'codex' && codexUsage?.rate_limited === true)
 
-  const openVscode = async () => {
+  const openExternalEditor = async () => {
     let target = cwd
     if (!target && activeTab?.ptyId) {
       target = (await getPtyCwd(activeTab.ptyId).catch(() => null)) ?? ''
     }
     if (!target) return
-    await openInVscode(target).catch((err) => {
-      console.error('open vscode falhou', err)
-    })
+    try {
+      await openInExternalEditor(target, externalEditor)
+    } catch (err) {
+      window.alert(t('ui.terminal.openFailed', { label: externalEditorLabel, error: String(err) }))
+    }
   }
 
   // Whether this terminal already has its orchestration board next to it.
@@ -531,12 +536,12 @@ export const TerminalPane = memo(function TerminalPane({
               <button
                 type="button"
                 className={styles.action}
-                onClick={() => void openVscode()}
-                title={t('ui.terminal.openInVscode')}
-                aria-label={t('ui.terminal.openInVscode')}
+                onClick={() => void openExternalEditor()}
+                title={t('ui.terminal.openInExternalEditor', { editor: externalEditorLabel })}
+                aria-label={t('ui.terminal.openInExternalEditor', { editor: externalEditorLabel })}
                 disabled={!activeTab}
               >
-                <VSCodeIcon size={12} />
+                {externalEditor === 'cursor' ? <CursorIcon size={12} /> : <VSCodeIcon size={12} />}
               </button>
               <button
                 type="button"

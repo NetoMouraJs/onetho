@@ -1026,6 +1026,12 @@ export const zhCN: Record<MessageKey, string> = {
   'prefs.shellDesc':
     'Alethe 会自动选择 shell（Windows 上优先 PowerShell 7，其次 Windows PowerShell；其他系统使用 $SHELL）。指定另一个可执行文件即可覆盖此选择 — 它只作用于 Shell 标签页，不影响代理标签页。',
   'prefs.shellPathPick': '选择 shell 可执行文件',
+  'prefs.externalEditor': '外部编辑器',
+  'prefs.externalEditorDesc': '选择从 Alethe 打开终端或项目文件夹时使用的编辑器。',
+  'prefs.externalEditor.vscode': 'VS Code',
+  'prefs.externalEditor.cursor': 'Cursor',
+  'externalEditor.vscode.name': 'VS Code',
+  'externalEditor.cursor.name': 'Cursor',
   'prefs.terminalFont': '终端字体',
   'prefs.terminalFontDesc':
     '终端窗格使用的字体栈。oh-my-posh 和 Starship 等提示符需要系统中已安装 Nerd Font，例如 "CaskaydiaCove Nerd Font"。',
@@ -1966,6 +1972,9 @@ export const zhCN: Record<MessageKey, string> = {
   'ui.terminal.openInVscodeCwd': '在 VS Code 中打开 · {cwd}',
   'ui.terminal.openLiveCwdInVscode': '在 VS Code 中打开当前工作目录的实时窗口',
   'ui.terminal.openInVscode': '在 VS Code 中打开',
+  'ui.terminal.openInExternalEditor': '在 {editor} 中打开',
+  'ui.terminal.openInExternalEditorCwd': '在 {editor} 中打开 · {cwd}',
+  'ui.terminal.openLiveCwdInExternalEditor': '在 {editor} 中打开当前工作目录',
   'ui.terminal.exitFocusModeEsc': '退出专注模式（Esc）',
   'ui.terminal.exitFocusMode': '退出专注模式',
   'ui.terminal.focusModeFullscreen': '专注模式（全屏）',

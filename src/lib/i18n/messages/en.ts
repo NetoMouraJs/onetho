@@ -1216,6 +1216,13 @@ export const en = {
   'prefs.shellDesc':
     'Alethe picks the shell on its own (PowerShell 7 when available, then Windows PowerShell; $SHELL elsewhere). Point it at another binary to override that — it applies to Shell tabs, not to agent tabs.',
   'prefs.shellPathPick': 'Select the shell executable',
+  'prefs.externalEditor': 'External editor',
+  'prefs.externalEditorDesc':
+    'Choose which editor opens when you open a terminal or project folder from Alethe.',
+  'prefs.externalEditor.vscode': 'VS Code',
+  'prefs.externalEditor.cursor': 'Cursor',
+  'externalEditor.vscode.name': 'VS Code',
+  'externalEditor.cursor.name': 'Cursor',
   'prefs.terminalFont': 'Terminal font',
   'prefs.terminalFontDesc':
     'Font stack used by the terminal panes. Prompts such as oh-my-posh and Starship need a Nerd Font installed on the system — for example "CaskaydiaCove Nerd Font".',
@@ -2243,6 +2250,9 @@ export const en = {
   'ui.terminal.openInVscodeCwd': 'Open in VS Code · {cwd}',
   'ui.terminal.openLiveCwdInVscode': 'Open live cwd in VS Code',
   'ui.terminal.openInVscode': 'Open in VS Code',
+  'ui.terminal.openInExternalEditor': 'Open in {editor}',
+  'ui.terminal.openInExternalEditorCwd': 'Open in {editor} · {cwd}',
+  'ui.terminal.openLiveCwdInExternalEditor': 'Open live cwd in {editor}',
   'ui.terminal.exitFocusModeEsc': 'Exit focus mode (Esc)',
   'ui.terminal.exitFocusMode': 'Exit focus mode',
   'ui.terminal.focusModeFullscreen': 'Focus mode (fullscreen)',

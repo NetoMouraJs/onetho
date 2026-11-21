@@ -4,7 +4,7 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 
-use crate::cli_resolver::find_vscode_launcher;
+use crate::cli_resolver::{find_cursor_editor_launcher, find_vscode_launcher};
 use crate::paths::{app_data_dir, spawn_log_path};
 
 fn existing_path_from_user_input(path: &str) -> Result<PathBuf, String> {
@@ -59,12 +59,7 @@ pub fn open_in_file_explorer(path: String) -> Result<(), String> {
     result.map(|_| ()).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub fn open_in_vscode(path: String) -> Result<(), String> {
-    let target = existing_path_from_user_input(&path)?;
-    let launcher = find_vscode_launcher().ok_or_else(|| {
-        "VS Code não encontrado (procurado em PATH, LOCALAPPDATA, ProgramFiles)".to_string()
-    })?;
+fn launch_editor(launcher: std::path::PathBuf, target: std::path::PathBuf) -> Result<(), String> {
     let is_cmd = launcher
         .extension()
         .and_then(|s| s.to_str())
@@ -86,6 +81,65 @@ pub fn open_in_vscode(path: String) -> Result<(), String> {
         command.spawn()
     };
     result.map(|_| ()).map_err(|e| e.to_string())
+}
+
+fn resolve_editor_launcher(editor: &str) -> Result<std::path::PathBuf, String> {
+    match editor.trim().to_lowercase().as_str() {
+        "vscode" => find_vscode_launcher().ok_or_else(|| {
+            "VS Code not found (searched PATH, LOCALAPPDATA, and Program Files)".to_string()
+        }),
+        "cursor" => find_cursor_editor_launcher().ok_or_else(|| {
+            "Cursor not found (searched PATH, LOCALAPPDATA, and Program Files)".to_string()
+        }),
+        other => Err(format!("Unknown external editor: {other}")),
+    }
+}
+
+#[tauri::command]
+pub fn open_in_external_editor(path: String, editor: String) -> Result<(), String> {
+    let target = existing_path_from_user_input(&path)?;
+    let launcher = resolve_editor_launcher(&editor)?;
+    launch_editor(launcher, target)
+}
+
+#[tauri::command]
+pub fn open_in_vscode(path: String) -> Result<(), String> {
+    open_in_external_editor(path, "vscode".to_string())
+}
+
+#[cfg(test)]
+mod editor_open_tests {
+    use super::resolve_editor_launcher;
+
+    #[test]
+    fn unknown_external_editor_is_rejected() {
+        let err = resolve_editor_launcher("emacs").unwrap_err();
+        assert!(err.contains("Unknown external editor"));
+    }
+
+    #[test]
+    fn editor_id_is_trimmed_and_case_insensitive() {
+        assert!(resolve_editor_launcher("  VSCODE  ")
+            .unwrap_err()
+            .contains("VS Code not found"));
+        assert!(resolve_editor_launcher("CuRsOr")
+            .unwrap_err()
+            .contains("Cursor not found"));
+    }
+
+    #[test]
+    fn missing_vscode_reports_actionable_message() {
+        let err = resolve_editor_launcher("vscode").unwrap_err();
+        assert!(err.contains("VS Code not found"));
+        assert!(err.contains("PATH"));
+    }
+
+    #[test]
+    fn missing_cursor_reports_actionable_message() {
+        let err = resolve_editor_launcher("cursor").unwrap_err();
+        assert!(err.contains("Cursor not found"));
+        assert!(err.contains("PATH"));
+    }
 }
 
 #[tauri::command]

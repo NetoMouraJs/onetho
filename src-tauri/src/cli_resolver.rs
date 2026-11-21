@@ -517,6 +517,64 @@ pub fn find_vscode_launcher() -> Option<PathBuf> {
     }
 }
 
+/// Looks for the Cursor **editor** launcher (`cursor`) in common install locations and PATH.
+/// This is separate from `cursor-agent`, which is resolved for orchestration workers.
+pub fn find_cursor_editor_launcher() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        let root_candidates = ["Cursor.exe"];
+        let path_candidates = ["cursor.exe", "cursor.cmd"];
+        let mut dirs: Vec<PathBuf> = Vec::new();
+        if let Some(local) = env::var_os("LOCALAPPDATA").map(PathBuf::from) {
+            dirs.push(local.join("Programs").join("cursor").join("bin"));
+        }
+        if let Some(pf) = env::var_os("ProgramFiles").map(PathBuf::from) {
+            dirs.push(pf.join("cursor").join("bin"));
+        }
+
+        for app_dir in dirs.iter().filter_map(|dir| dir.parent()) {
+            for name in root_candidates {
+                let candidate = app_dir.join(name);
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
+
+        dirs.splice(0..0, split_windows_path_expanded(&rebuilt_path()));
+        for dir in dirs {
+            for name in path_candidates {
+                let candidate = dir.join(name);
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
+        None
+    }
+
+    #[cfg(not(windows))]
+    {
+        if let Ok(path) = which::which("cursor") {
+            return Some(path);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let bundled = PathBuf::from("/Applications/Cursor.app/Contents/Resources/app/bin/cursor");
+            if bundled.is_file() {
+                return Some(bundled);
+            }
+        }
+        if let Some(home) = env::var_os("HOME").map(PathBuf::from) {
+            let local_bin = home.join(".local").join("bin").join("cursor");
+            if local_bin.is_file() {
+                return Some(local_bin);
+            }
+        }
+        None
+    }
+}
+
 pub fn agent_search_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::<PathBuf>::new();
     if let Some(profile) = env::var_os("USERPROFILE").map(PathBuf::from) {
