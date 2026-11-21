@@ -4,7 +4,12 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use crate::claude_sessions::{read_capped_line, truncate_chars};
-use crate::provider_common::{file_modified_ms, normalize_cwd, provider_home_dir, provider_scope};
+use crate::provider_common::{
+    file_modified_ms, normalize_cwd, provider_home_dir, provider_scope,
+    provider_scope_at_root,
+};
+use std::env;
+use std::ffi::OsString;
 
 #[derive(Serialize)]
 pub struct CodexSessionSnapshot {
@@ -16,8 +21,34 @@ pub struct CodexSessionSnapshot {
     pub started_at: Option<String>,
 }
 
+/// Same rule as Codex itself and `codex_usage.rs`: `$CODEX_HOME` when set, else `~/.codex`.
+pub(crate) fn codex_home_dir() -> Option<PathBuf> {
+    env::var_os("CODEX_HOME")
+        .filter(|home| !home.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| provider_home_dir(&[".codex"]))
+}
+
 pub(crate) fn codex_sessions_dir() -> Option<PathBuf> {
-    provider_home_dir(&[".codex", "sessions"])
+    codex_home_dir().map(|home| home.join("sessions"))
+}
+
+fn codex_home_from_env() -> Option<PathBuf> {
+    env::var_os("CODEX_HOME")
+        .filter(|home| !home.is_empty())
+        .map(PathBuf::from)
+}
+
+/// Session discovery root: honors `CODEX_HOME`; WSL cwd matching follows `provider_scope` when
+/// the default home layout is used.
+pub(crate) fn codex_provider_scope(cwd: &str) -> Option<crate::provider_common::ProviderScope> {
+    let Some(root) = codex_sessions_dir() else {
+        return None;
+    };
+    if codex_home_from_env().is_some() {
+        return provider_scope_at_root(cwd, root);
+    }
+    provider_scope(cwd, &[".codex", "sessions"])
 }
 
 pub(crate) fn collect_jsonl_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -113,7 +144,7 @@ fn snapshot_codex_sessions_inner(cwd: String) -> Result<Vec<CodexSessionSnapshot
         return Ok(Vec::new());
     }
 
-    let Some(scope) = provider_scope(&cwd, &[".codex", "sessions"]) else {
+    let Some(scope) = codex_provider_scope(&cwd) else {
         if crate::wsl::wsl_target(&cwd).is_some() {
             return Ok(Vec::new());
         }
@@ -236,6 +267,80 @@ pub async fn get_codex_session_title(session_id: String) -> Result<Option<String
     tokio::task::spawn_blocking(move || get_codex_session_title_inner(session_id))
         .await
         .map_err(|error| format!("get_codex_session_title: falha na task bloqueante: {error}"))?
+}
+
+#[cfg(test)]
+mod codex_home_tests {
+    use super::*;
+    use std::fs;
+    use std::path::Path;
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<OsString>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: Option<&str>) -> Self {
+            let previous = env::var_os(key);
+            match value {
+                Some(v) => env::set_var(key, v),
+                None => env::remove_var(key),
+            }
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(v) => env::set_var(self.key, v),
+                None => env::remove_var(self.key),
+            }
+        }
+    }
+
+    #[test]
+    fn codex_sessions_dir_honors_codex_home_env() {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _lock = LOCK.lock().expect("env test lock");
+
+        let custom = std::env::temp_dir().join(format!(
+            "alethe-codex-home-set-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&custom);
+        fs::create_dir_all(&custom).expect("temp codex home");
+        let _codex_home = EnvGuard::set("CODEX_HOME", Some(custom.to_str().expect("utf-8 path")));
+
+        let dir = codex_sessions_dir().expect("sessions dir");
+        assert_eq!(dir, custom.join("sessions"));
+        let _ = fs::remove_dir_all(&custom);
+        drop(_codex_home);
+
+        let home = std::env::temp_dir().join(format!(
+            "alethe-codex-home-unset-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&home);
+        fs::create_dir_all(&home).expect("temp user home");
+        let _home = EnvGuard::set("HOME", Some(home.to_str().expect("utf-8 path")));
+        let _userprofile = EnvGuard::set("USERPROFILE", None);
+        let _codex_home = EnvGuard::set("CODEX_HOME", None);
+
+        let dir = codex_sessions_dir().expect("sessions dir");
+        let expected = if cfg!(windows) {
+            home.join(".codex").join("sessions")
+        } else {
+            Path::new(&home).join(".codex").join("sessions")
+        };
+        assert_eq!(dir, expected);
+
+        let scope = codex_provider_scope("/workspace/app").expect("scope");
+        assert_eq!(scope.root, expected);
+
+        let _ = fs::remove_dir_all(&home);
+    }
 }
 
 #[cfg(test)]

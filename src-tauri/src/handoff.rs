@@ -606,7 +606,7 @@ fn resolve_source_file(
             }
         }
         Provider::Codex => {
-            let scope = provider_scope(cwd, &[".codex", "sessions"]);
+            let scope = crate::codex_sessions::codex_provider_scope(cwd);
             match scope {
                 Some(scope) => {
                     let mut files = Vec::new();
