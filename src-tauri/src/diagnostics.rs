@@ -116,6 +116,30 @@ mod editor_open_tests {
         let err = resolve_editor_launcher("emacs").unwrap_err();
         assert!(err.contains("Unknown external editor"));
     }
+
+    #[test]
+    fn editor_id_is_trimmed_and_case_insensitive() {
+        assert!(resolve_editor_launcher("  VSCODE  ")
+            .unwrap_err()
+            .contains("VS Code not found"));
+        assert!(resolve_editor_launcher("CuRsOr")
+            .unwrap_err()
+            .contains("Cursor not found"));
+    }
+
+    #[test]
+    fn missing_vscode_reports_actionable_message() {
+        let err = resolve_editor_launcher("vscode").unwrap_err();
+        assert!(err.contains("VS Code not found"));
+        assert!(err.contains("PATH"));
+    }
+
+    #[test]
+    fn missing_cursor_reports_actionable_message() {
+        let err = resolve_editor_launcher("cursor").unwrap_err();
+        assert!(err.contains("Cursor not found"));
+        assert!(err.contains("PATH"));
+    }
 }
 
 #[tauri::command]
