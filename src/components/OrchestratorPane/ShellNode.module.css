@@ -74,6 +74,7 @@
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+  user-select: text;
 }
 
 .output {
@@ -83,6 +84,7 @@
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
+  user-select: text;
 }
 
 .controls {

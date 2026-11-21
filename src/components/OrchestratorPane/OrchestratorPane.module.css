@@ -810,6 +810,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--fg);
+  user-select: text;
 }
 
 .workerElapsed {
@@ -842,6 +843,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--fg-muted);
+  user-select: text;
 }
 
 .meta {
@@ -936,6 +938,7 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  user-select: text;
 }
 
 .media {

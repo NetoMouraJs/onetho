@@ -12,6 +12,7 @@ import type { MessageKey, TFunction } from '../../lib/i18n'
 import type { GraphNode } from '../../lib/orchestratorGraph'
 import { type BoardShell, type ShellControl, shellControls } from '../../lib/orchestratorShells'
 import { type OrchestratorShell, orchestratorShellOutput } from '../../lib/tauri/orchestrator'
+import { openCardUnlessTextSelected } from './cardOpenClick'
 import styles from './ShellNode.module.css'
 
 const TAIL_LINES = 1
@@ -115,12 +116,19 @@ export function ShellNode({
         })}
       </div>
 
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         className={styles.card}
         title={shell.command}
+        aria-label={shell.command}
         onPointerDown={(event) => event.stopPropagation()}
-        onClick={() => onOpen(shell)}
+        onClick={() => openCardUnlessTextSelected(() => onOpen(shell))}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.preventDefault()
+          openCardUnlessTextSelected(() => onOpen(shell))
+        }}
       >
         <span className={styles.head}>
           <span className={styles.dot} aria-hidden />
@@ -129,7 +137,7 @@ export function ShellNode({
         </span>
         <code className={styles.command}>{shell.command}</code>
         {output ? <span className={styles.output}>{output}</span> : null}
-      </button>
+      </div>
     </article>
   )
 }
