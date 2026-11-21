@@ -99,6 +99,7 @@ import { useUiStore } from '../../stores/uiStore'
 import { Modal } from '../modals/Modal'
 import { Collapse } from '../ui/Collapse'
 import { writePtyChunked } from '../XTermView/terminalWrite'
+import { openCardUnlessTextSelected } from './cardOpenClick'
 import { AgentGlyph, contextShare, formatElapsed, formatTokens, statusTitle } from './nodeFormat'
 import { OrchestratorInspector, type InspectorTarget } from './OrchestratorInspector'
 import { ShellNode } from './ShellNode'
@@ -358,12 +359,19 @@ function WorkerNode({
         </div>
       )}
 
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         className={styles.workerCard}
         title={job.spec}
+        aria-label={job.spec}
         onPointerDown={(event) => event.stopPropagation()}
-        onClick={() => onSelect(job.id)}
+        onClick={() => openCardUnlessTextSelected(() => onSelect(job.id))}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.preventDefault()
+          openCardUnlessTextSelected(() => onSelect(job.id))
+        }}
       >
         <span className={styles.workerHead}>
           <AgentGlyph
@@ -443,7 +451,7 @@ function WorkerNode({
           )}
           {job.hasDiff && <span>{t('orchestrator.hasDiff')}</span>}
         </span>
-      </button>
+      </div>
 
       {job.status === 'blocked' && job.pendingApproval && (
         <ApprovalAsk

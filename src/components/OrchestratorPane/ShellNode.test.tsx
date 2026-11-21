@@ -18,7 +18,10 @@ import type { GraphNode } from '../../lib/orchestratorGraph'
 import type { BoardShell } from '../../lib/orchestratorShells'
 import { ShellNode } from './ShellNode'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 
 const t = ((key: string, vars?: Record<string, string | number>) =>
   vars ? `${key} ${Object.values(vars).join(' ')}` : key) as unknown as TFunction
@@ -90,6 +93,23 @@ describe('ShellNode', () => {
     render(<ShellNode {...props} onOpen={onOpen} />)
     fireEvent.click(screen.getByRole('button', { name: /npm run dev/ }))
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: 'shell-01' }))
+  })
+
+  it('does not open the inspector when click follows a text selection', () => {
+    const onOpen = vi.fn()
+    vi.spyOn(window, 'getSelection').mockReturnValue({
+      type: 'Range',
+      toString: () => 'listening on :3000',
+    } as Selection)
+    render(<ShellNode {...props} onOpen={onOpen} />)
+    fireEvent.click(screen.getByRole('button', { name: /npm run dev/ }))
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it('renders shell preview lines outside native button elements', async () => {
+    render(<ShellNode {...props} />)
+    expect(screen.getByText('npm run dev').closest('button')).toBeNull()
+    await waitFor(() => expect(screen.getByText('listening on :3000').closest('button')).toBeNull())
   })
 
   it('passes the control that was clicked', () => {

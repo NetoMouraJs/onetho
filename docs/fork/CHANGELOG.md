@@ -8,6 +8,11 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
 
 ## [Unreleased]
 
+### Fixed
+
+- Orchestrator board cards: worker and shell previews allow selecting and copying visible text again;
+  opening the inspector is skipped when the click follows a text selection.
+
 ## [0.1.0] - 2026-10-19
 
 Upstream base: Alethe 1.7.0 plus upstream `main` up to `0acefe8` (`v1.7.0-403-g0acefe82`).
