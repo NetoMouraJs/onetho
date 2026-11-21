@@ -8,6 +8,11 @@ in every locale under `src/lib/i18n/messages/` (`whatsNew.fork.v<version>.note*`
 
 ## [Unreleased]
 
+### Fixed
+
+- Codex pane and sidebar titles now follow `/rename` (read from Codex state DB) and no longer show
+  injected `# AGENTS.md instructions <INSTRUCTIONS>…` blocks as the session name.
+
 ## [0.1.0] - 2026-10-19
 
 Upstream base: Alethe 1.7.0 plus upstream `main` up to `0acefe8` (`v1.7.0-403-g0acefe82`).

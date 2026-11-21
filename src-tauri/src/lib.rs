@@ -589,6 +589,7 @@ pub fn run() {
             claude_sessions::get_multi_agent_activity,
             codex_sessions::snapshot_codex_sessions,
             codex_sessions::get_codex_session_title,
+            codex_sessions::get_codex_session_title_info,
             native_subagent_status::native_subagent_completed,
             handoff::prepare_agent_handoff,
             handoff::materialize_agent_handoff,
