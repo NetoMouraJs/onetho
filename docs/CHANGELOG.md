@@ -470,8 +470,9 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
 ### Changed
 
 - **ai-memory for orchestrator workers.** Workers no longer read or leave the handoff meant for your
-  next session, and reviewer/QA workers start without ai-memory recall (no MCP, nothing injected at
-  start); capture still records them, tagged with their role and job label. Needs an ai-memory build
+  next session, and start with nothing from ai-memory injected, not even another session's recovery
+  snapshot. Builders query memory on demand; reviewer/QA workers get no ai-memory at all. Capture
+  still records every worker, tagged with its role and job label. Needs an ai-memory build
   that understands the worker variables; older builds ignore them.
 - **Your own ai-memory comes first.** A copy you installed yourself is used before the one
   Preferences installs, and Install is not offered while another ai-memory server already answers.

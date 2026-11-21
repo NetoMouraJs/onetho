@@ -1372,9 +1372,11 @@ fn claude_worker_args(
 /// Roles the ai-memory hook records as they are; any other role, or none, is `automation`.
 const AI_MEMORY_SESSION_ROLES: [&str; 3] = ["builder", "reviewer", "qa"];
 
-/// What a worker's launch adds for ai-memory, so a worker never consumes or leaves the user's
-/// handoff and a reviewer/QA worker gets no recall at all. Old ai-memory builds ignore the
-/// variables, so they are always set; capture is untouched either way.
+/// What a worker's launch adds for ai-memory. Nothing is injected at start: the recovery snapshot
+/// `no-handoff` still lets through comes from any unfinished session in the project, usually the
+/// user's own. Workers never consume or leave the user's handoff, other workers query memory
+/// through MCP when they need it, and reviewer/QA workers get no MCP either. Old ai-memory builds
+/// ignore the variables, so they are always set; capture is untouched either way.
 fn ai_memory_worker_launch(
     agent: &str,
     role: Option<&str>,
@@ -1385,9 +1387,8 @@ fn ai_memory_worker_launch(
         .filter(|role| AI_MEMORY_SESSION_ROLES.contains(&role.as_str()))
         .unwrap_or_else(|| "automation".to_string());
     let no_recall = role == "reviewer" || role == "qa";
-    let inject = if no_recall { "none" } else { "no-handoff" };
     let env = vec![
-        ("AI_MEMORY_HOOK_INJECT".to_string(), inject.to_string()),
+        ("AI_MEMORY_HOOK_INJECT".to_string(), "none".to_string()),
         ("AI_MEMORY_AUTO_HANDOFF".to_string(), "off".to_string()),
         ("AI_MEMORY_SESSION_ROLE".to_string(), role),
         ("AI_MEMORY_SESSION_LABEL".to_string(), label.to_string()),
@@ -3014,10 +3015,10 @@ mod tests {
     }
 
     #[test]
-    fn a_builder_worker_keeps_recall_but_never_touches_the_handoff() {
+    fn a_builder_worker_keeps_mcp_but_gets_nothing_injected_at_start() {
         let (args, env) = ai_memory_worker_launch("codex", Some("builder"), "LOCAL - JOB-1 (job-1)");
         assert!(args.is_empty(), "{args:?}");
-        assert_eq!(env_of(&env, "AI_MEMORY_HOOK_INJECT"), Some("no-handoff"));
+        assert_eq!(env_of(&env, "AI_MEMORY_HOOK_INJECT"), Some("none"));
         assert_eq!(env_of(&env, "AI_MEMORY_AUTO_HANDOFF"), Some("off"));
         assert_eq!(env_of(&env, "AI_MEMORY_SESSION_ROLE"), Some("builder"));
         assert_eq!(env_of(&env, "AI_MEMORY_SESSION_LABEL"), Some("LOCAL - JOB-1 (job-1)"));
@@ -3041,7 +3042,7 @@ mod tests {
             let (args, env) = ai_memory_worker_launch("claude", role, "job-3");
             assert!(args.is_empty(), "{args:?}");
             assert_eq!(env_of(&env, "AI_MEMORY_SESSION_ROLE"), Some("automation"));
-            assert_eq!(env_of(&env, "AI_MEMORY_HOOK_INJECT"), Some("no-handoff"));
+            assert_eq!(env_of(&env, "AI_MEMORY_HOOK_INJECT"), Some("none"));
             assert_eq!(env_of(&env, "AI_MEMORY_AUTO_HANDOFF"), Some("off"));
         }
     }
