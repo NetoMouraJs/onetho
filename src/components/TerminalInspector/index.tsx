@@ -17,13 +17,14 @@ import { type ReactNode, useMemo, useState } from 'react'
 
 import { relaunchAgentPty } from '../../lib/agentRelaunch'
 import { graphifyRepoOf } from '../../lib/claudeMcpConfigs'
+import { externalEditorNameKey, openInExternalEditor } from '../../lib/externalEditor'
 import { useT } from '../../lib/i18n'
 import type { SubTab, Terminal } from '../../lib/types'
-import { getPtyCwd, openInBrowser, openInFileExplorer, openInVscode } from '../../lib/tauri'
+import { getPtyCwd, openInBrowser, openInFileExplorer } from '../../lib/tauri'
 import { useProjectsStore } from '../../stores/projectsStore'
 import { useTerminalsStore } from '../../stores/terminalsStore'
 import { useUiStore } from '../../stores/uiStore'
-import { AgentIcon, VSCodeIcon } from '../icons/AgentIcons'
+import { AgentIcon, CursorIcon, VSCodeIcon } from '../icons/AgentIcons'
 import { ClaudeHistoryModal } from '../modals/ClaudeHistoryModal'
 import styles from './TerminalInspector.module.css'
 
@@ -58,6 +59,8 @@ function InspectorBody({ projectId, terminal }: { projectId: string; terminal: T
   const setFocusedTerminal = useUiStore((state) => state.setFocusedTerminal)
   const requestPaneFocus = useUiStore((state) => state.requestPaneFocus)
   const openModal = useUiStore((state) => state.openModal_)
+  const externalEditor = useProjectsStore((state) => state.preferences.externalEditor)
+  const externalEditorLabel = t(externalEditorNameKey(externalEditor))
   const terminalTheme = useProjectsStore(
     (state) => state.preferences.terminalTheme ?? state.preferences.uiTheme,
   )
@@ -197,9 +200,13 @@ function InspectorBody({ projectId, terminal }: { projectId: string; terminal: T
               onClick={() => void openWithCwd(openInFileExplorer, 'Explorer')}
             />
             <InspectorAction
-              icon={<VSCodeIcon size={14} />}
-              label={t('ui.terminal.openInVscode')}
-              onClick={() => void openWithCwd(openInVscode, 'VS Code')}
+              icon={
+                externalEditor === 'cursor' ? <CursorIcon size={14} /> : <VSCodeIcon size={14} />
+              }
+              label={t('ui.terminal.openInExternalEditor', { editor: externalEditorLabel })}
+              onClick={() =>
+                void openWithCwd((path) => openInExternalEditor(path, externalEditor), externalEditorLabel)
+              }
             />
             <InspectorAction
               icon={<RefreshCw size={14} />}

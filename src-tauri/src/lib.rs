@@ -560,6 +560,7 @@ pub fn run() {
             diagnostics::open_spawn_log,
             diagnostics::open_in_file_explorer,
             diagnostics::open_in_vscode,
+            diagnostics::open_in_external_editor,
             diagnostics::open_in_browser,
             diagnostics::read_clipboard_text,
             diagnostics::write_clipboard_text,

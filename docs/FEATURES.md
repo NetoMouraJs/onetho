@@ -130,7 +130,7 @@ Custom grids support `colSpan`, `rowSpan`, drag-and-drop swapping, and resizable
 
 - Custom title bar.
 - Open cwd in the system file explorer.
-- Open cwd in VS Code.
+- Open cwd in VS Code or Cursor (global preference under Preferences → Terminals).
 - Open the local app-data folder.
 - Open the spawn log.
 - Reset local app data.

@@ -50,6 +50,12 @@ describe('preference normalization', () => {
     expect(preferences.terminalFontFamily).toBe(DEFAULT_TERMINAL_FONT_FAMILY)
   })
 
+  it('defaults the external editor to VS Code and keeps Cursor when saved', () => {
+    expect(normalizePreferences({}).externalEditor).toBe('vscode')
+    expect(normalizePreferences({ externalEditor: 'cursor' }).externalEditor).toBe('cursor')
+    expect(normalizePreferences({ externalEditor: 'emacs' as 'vscode' }).externalEditor).toBe('vscode')
+  })
+
   it('launches Claude in the classic renderer unless the profile asked for fullscreen', () => {
     expect(DEFAULT_PREFERENCES.claudeFullscreen).toBe(false)
     expect(normalizePreferences({}).claudeFullscreen).toBe(false)

@@ -1240,6 +1240,13 @@ export const ptBR: Record<MessageKey, string> = {
   'prefs.shellDesc':
     'O Alethe escolhe o shell sozinho (PowerShell 7 quando disponível, senão o Windows PowerShell; $SHELL nos demais sistemas). Aponte outro binário para sobrescrever — vale para abas Shell, não para abas de agente.',
   'prefs.shellPathPick': 'Selecione o executável do shell',
+  'prefs.externalEditor': 'Editor externo',
+  'prefs.externalEditorDesc':
+    'Escolha qual editor abre quando você abre uma pasta de terminal ou projeto pelo Alethe.',
+  'prefs.externalEditor.vscode': 'VS Code',
+  'prefs.externalEditor.cursor': 'Cursor',
+  'externalEditor.vscode.name': 'VS Code',
+  'externalEditor.cursor.name': 'Cursor',
   'prefs.terminalFont': 'Fonte do terminal',
   'prefs.terminalFontDesc':
     'Fontes usadas nos painéis de terminal. Prompts como oh-my-posh e Starship precisam de uma Nerd Font instalada no sistema — por exemplo "CaskaydiaCove Nerd Font".',
@@ -2282,6 +2289,9 @@ export const ptBR: Record<MessageKey, string> = {
   'ui.terminal.openInVscodeCwd': 'Abrir no VS Code · {cwd}',
   'ui.terminal.openLiveCwdInVscode': 'Abrir cwd vivo no VS Code',
   'ui.terminal.openInVscode': 'Abrir no VS Code',
+  'ui.terminal.openInExternalEditor': 'Abrir no {editor}',
+  'ui.terminal.openInExternalEditorCwd': 'Abrir no {editor} · {cwd}',
+  'ui.terminal.openLiveCwdInExternalEditor': 'Abrir cwd vivo no {editor}',
   'ui.terminal.exitFocusModeEsc': 'Sair do Focus mode (Esc)',
   'ui.terminal.exitFocusMode': 'Sair do Focus mode',
   'ui.terminal.focusModeFullscreen': 'Focus mode (fullscreen)',

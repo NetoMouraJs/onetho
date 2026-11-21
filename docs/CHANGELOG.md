@@ -10,6 +10,10 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
 
 ## [Unreleased]
 
+### Added
+
+- **External editor preference.** Preferences → Terminals lets you choose VS Code or Cursor for every “open in editor” action (terminal toolbar, inspector, and sidebar). Existing profiles default to VS Code; a missing install shows an error without falling back to the other editor.
+
 - **Dev diagnostics.** A local dashboard traces Claude and Codex usage refreshes and frontend failures with correlation IDs, timing and safe error categories.
 - **Dev diagnostic details.** Failed events can show a sanitized frontend stack and their full event ID.
 

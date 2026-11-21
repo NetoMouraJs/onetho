@@ -1,4 +1,4 @@
-import { Activity, Minus, Plus, RotateCcw } from 'lucide-react'
+import { Activity, Check, Minus, Plus, RotateCcw } from 'lucide-react'
 import { useState } from 'react'
 
 import { cliPathMatchesAgent } from '../../../lib/agentCliPath'
@@ -13,11 +13,12 @@ import {
   type AgentType,
   ALL_AGENT_TYPES,
   DEFAULT_TERMINAL_FONT_FAMILY,
+  EXTERNAL_EDITOR_IDS,
   isShellAgentType,
 } from '../../../lib/types'
 import { SPAWN_CONCURRENCY_LIMITS, useProjectsStore } from '../../../stores/projectsStore'
 import { useUiStore } from '../../../stores/uiStore'
-import { AgentIcon } from '../../icons/AgentIcons'
+import { AgentIcon, CursorIcon, VSCodeIcon } from '../../icons/AgentIcons'
 import controls from '../controls.module.css'
 import styles from '../PreferencesModal.module.css'
 import { CustomAgentsSection } from './CustomAgentsSection'
@@ -225,6 +226,39 @@ export function TerminalPage({ enabledCount }: { enabledCount: number }) {
               </button>
             ) : null}
           </span>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        id="external-editor"
+        title={t('prefs.externalEditor')}
+        description={t('prefs.externalEditorDesc')}
+      >
+        <div className={styles.visualStyleGrid}>
+          {EXTERNAL_EDITOR_IDS.map((editorId) => {
+            const active = preferences.externalEditor === editorId
+            return (
+              <button
+                key={editorId}
+                type="button"
+                className={`${styles.visualStyleOption} ${active ? styles.visualStyleActive : ''}`}
+                onClick={() => setPreferences({ externalEditor: editorId })}
+                aria-pressed={active}
+              >
+                <span className={styles.agentIcon} aria-hidden>
+                  {editorId === 'cursor' ? <CursorIcon size={22} /> : <VSCodeIcon size={22} />}
+                </span>
+                <span className={styles.visualStyleCopy}>
+                  <strong>
+                    {t(
+                      editorId === 'cursor' ? 'prefs.externalEditor.cursor' : 'prefs.externalEditor.vscode',
+                    )}
+                  </strong>
+                </span>
+                {active ? <Check size={15} /> : null}
+              </button>
+            )
+          })}
         </div>
       </SettingsSection>
 

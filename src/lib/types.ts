@@ -775,6 +775,10 @@ export type VoiceProviderFlags = Partial<
   Record<CloudVoiceProviderId, { configured: boolean; invalid: boolean }>
 >
 
+export type ExternalEditorId = 'vscode' | 'cursor'
+
+export const EXTERNAL_EDITOR_IDS: ExternalEditorId[] = ['vscode', 'cursor']
+
 export type Preferences = {
   voiceProviders: VoiceProviderFlags
   language: Locale
@@ -909,6 +913,8 @@ export type Preferences = {
    * (`pwsh` → `powershell` on Windows, `$SHELL` elsewhere).
    */
   shellPath: string | null
+  /** Editor used when opening a folder from the terminal UI (VS Code or Cursor). */
+  externalEditor: ExternalEditorId
   /** Font stack for the terminal. A Nerd Font is required for prompts such as oh-my-posh. */
   terminalFontFamily: string
   // Default false keeps scrolling and searching with the pane in the classic renderer.
@@ -1109,6 +1115,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   orchestratorShortcuts: null,
   workerRuleSets: null,
   shellPath: null,
+  externalEditor: 'vscode',
   terminalFontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
   claudeFullscreen: false,
   pomodoroWorkMinutes: 25,
