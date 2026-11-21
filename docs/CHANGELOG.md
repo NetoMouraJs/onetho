@@ -610,6 +610,11 @@ Notable user-facing changes to **Alethe** are documented here. The format is bas
 
 ### Fixed
 
+- **Codex session title lookups no longer walk the whole session archive on every read.** The path for
+  each session id is remembered in memory (and dropped when the file is gone), and fresh lookups scan
+  recent day folders before falling back to the full tree, so sidebar title retries stay cheap on large
+  archives.
+
 - ai-memory installs accept Unix archives with a root directory entry, find manually installed
   binaries outside the app PATH, and avoid duplicating Claude Code capture hooks already configured.
 - **Light terminal contrast.** Light themes, including plugin themes, enforce a WCAG-AA contrast

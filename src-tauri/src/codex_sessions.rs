@@ -1,10 +1,38 @@
+use chrono::{Duration, Local, NaiveDate};
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::claude_sessions::{read_capped_line, truncate_chars};
 use crate::provider_common::{file_modified_ms, normalize_cwd, provider_home_dir, provider_scope};
+
+static SESSION_FILE_CACHE: OnceLock<Mutex<HashMap<String, PathBuf>>> = OnceLock::new();
+
+fn session_file_cache() -> &'static Mutex<HashMap<String, PathBuf>> {
+    SESSION_FILE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+#[cfg(test)]
+static FIND_SESSION_WALKS: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(test)]
+pub(crate) fn reset_codex_session_file_cache() {
+    session_file_cache().lock().unwrap().clear();
+    FIND_SESSION_WALKS.store(0, Ordering::SeqCst);
+}
+
+#[cfg(test)]
+pub(crate) fn codex_session_find_walk_count() -> usize {
+    FIND_SESSION_WALKS.load(Ordering::SeqCst)
+}
+
+/// How many calendar days of `sessions/<y>/<m>/<d>/` folders to scan before a full tree walk.
+const RECENT_SESSION_DAYS: i64 = 14;
 
 #[derive(Serialize)]
 pub struct CodexSessionSnapshot {
@@ -152,19 +180,103 @@ fn snapshot_codex_sessions_inner(cwd: String) -> Result<Vec<CodexSessionSnapshot
 /// name itself carries the session id as its trailing UUID
 /// (`rollout-<timestamp>-<id>.jsonl`), so a filename match avoids opening
 /// every file just to find the right one.
-pub(crate) fn find_codex_session_file(session_id: &str) -> Option<PathBuf> {
-    let root = codex_sessions_dir()?;
+fn session_file_suffix(session_id: &str) -> String {
+    format!("{session_id}.jsonl")
+}
+
+fn path_matches_session_id(path: &Path, suffix: &str) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.ends_with(suffix))
+}
+
+fn match_session_in_dir(dir: &Path, suffix: &str) -> Option<PathBuf> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return None;
+    };
+    entries.filter_map(|entry| entry.ok()).find_map(|entry| {
+        let path = entry.path();
+        if path.is_file() && path_matches_session_id(&path, suffix) {
+            Some(path)
+        } else {
+            None
+        }
+    })
+}
+
+/// Walk only day-level folders for the last [`RECENT_SESSION_DAYS`] before touching older archives.
+fn find_session_in_recent_days(root: &Path, session_id: &str) -> Option<PathBuf> {
+    let suffix = session_file_suffix(session_id);
+    let today = Local::now().date_naive();
+    for day_offset in 0..RECENT_SESSION_DAYS {
+        let day = today - Duration::days(day_offset);
+        if let Some(path) = day_folder_session_file(root, day, &suffix) {
+            return Some(path);
+        }
+    }
+    None
+}
+
+fn day_folder_session_file(root: &Path, day: NaiveDate, suffix: &str) -> Option<PathBuf> {
+    let dir = root
+        .join(day.format("%Y").to_string())
+        .join(day.format("%m").to_string())
+        .join(day.format("%d").to_string());
+    if dir.is_dir() {
+        match_session_in_dir(&dir, suffix)
+    } else {
+        None
+    }
+}
+
+fn find_codex_session_file_walk(root: &Path, session_id: &str) -> Option<PathBuf> {
+    #[cfg(test)]
+    FIND_SESSION_WALKS.fetch_add(1, Ordering::SeqCst);
+
+    let suffix = session_file_suffix(session_id);
+    if let Some(path) = find_session_in_recent_days(root, session_id) {
+        return Some(path);
+    }
+    let mut files = Vec::new();
+    collect_jsonl_files(root, &mut files);
+    files
+        .into_iter()
+        .find(|path| path_matches_session_id(path, &suffix))
+}
+
+/// Locate a session's `.jsonl` file under the given Codex sessions root (for unit tests).
+#[cfg(test)]
+pub(crate) fn find_codex_session_file_at(root: &Path, session_id: &str) -> Option<PathBuf> {
+    find_codex_session_file_with_root(root, session_id)
+}
+
+fn find_codex_session_file_with_root(root: &Path, session_id: &str) -> Option<PathBuf> {
+    if session_id.is_empty() || session_id.contains(['/', '\\']) {
+        return None;
+    }
     if !root.is_dir() {
         return None;
     }
-    let mut files = Vec::new();
-    collect_jsonl_files(&root, &mut files);
-    let suffix = format!("{session_id}.jsonl");
-    files.into_iter().find(|path| {
-        path.file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n.ends_with(&suffix))
+    if let Ok(mut cache) = session_file_cache().lock() {
+        if let Some(path) = cache.get(session_id) {
+            if path.is_file() {
+                return Some(path.clone());
+            }
+            cache.remove(session_id);
+        }
+    }
+    find_codex_session_file_walk(root, session_id).map(|path| {
+        if let Ok(mut cache) = session_file_cache().lock() {
+            cache.insert(session_id.to_string(), path.clone());
+        }
+        path
     })
+}
+
+/// Codex session files live under [`codex_sessions_dir`] (see issue #27 for `CODEX_HOME`).
+pub(crate) fn find_codex_session_file(session_id: &str) -> Option<PathBuf> {
+    let root = codex_sessions_dir()?;
+    find_codex_session_file_with_root(&root, session_id)
 }
 
 /// Only the first genuine user turn: the file also carries the framework's
@@ -266,6 +378,66 @@ mod session_meta_tests {
     fn rejects_a_line_that_is_not_session_meta() {
         assert!(parse_session_meta(r#"{"type":"event_msg","payload":{}}"#).is_none());
         assert!(parse_session_meta(r#"{"type":"session_meta","payl"#).is_none());
+    }
+}
+
+#[cfg(test)]
+mod find_session_file_tests {
+    use super::{
+        codex_session_find_walk_count, find_codex_session_file_at, reset_codex_session_file_cache,
+    };
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    fn test_root(label: &str) -> PathBuf {
+        let root =
+            std::env::temp_dir().join(format!("alethe-codex-find-{label}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    fn write_session(root: &Path, year: &str, month: &str, day: &str, session_id: &str) {
+        let dir = root.join(year).join(month).join(day);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("rollout-2026-01-01-{session_id}.jsonl"));
+        fs::write(path, r#"{"type":"session_meta","payload":{"id":"x"}}"#).unwrap();
+    }
+
+    #[test]
+    fn second_lookup_uses_cache_instead_of_walking_again() {
+        reset_codex_session_file_cache();
+        let root = test_root("cache-hit");
+        let session_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+        write_session(&root, "2099", "12", "31", session_id);
+
+        assert!(find_codex_session_file_at(&root, session_id).is_some());
+        assert_eq!(codex_session_find_walk_count(), 1);
+        assert!(find_codex_session_file_at(&root, session_id).is_some());
+        assert_eq!(
+            codex_session_find_walk_count(),
+            1,
+            "a cache hit must not walk the tree again"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn deleted_file_invalidates_cache_and_walks_again() {
+        reset_codex_session_file_cache();
+        let root = test_root("cache-stale");
+        let session_id = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
+        write_session(&root, "2098", "06", "15", session_id);
+
+        let path = find_codex_session_file_at(&root, session_id).unwrap();
+        assert_eq!(codex_session_find_walk_count(), 1);
+        fs::remove_file(&path).unwrap();
+        assert!(
+            find_codex_session_file_at(&root, session_id).is_none(),
+            "missing file should yield None after cache invalidation"
+        );
+        assert_eq!(codex_session_find_walk_count(), 2);
+        let _ = fs::remove_dir_all(&root);
     }
 }
 
